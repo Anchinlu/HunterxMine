@@ -1,0 +1,151 @@
+using System;
+using MineCraftUnity.Blocks;
+using MineCraftUnity.Core;
+using MineCraftUnity.World;
+using MineCraftUnity.WorldGen.Density;
+
+namespace MineCraftUnity.WorldGen
+{
+    /// <summary>
+    /// MC ref: NoiseBasedChunkGenerator.doFill — sloped cheese &gt; 0 = stone, then surface rules.
+    /// Uses terrain density (sloped cheese) for fill — faster and stable; cave carvers come later.
+    /// </summary>
+    public static class NoiseBasedChunkFiller
+    {
+        private const int SurfaceOverhangMargin = 32;
+
+        public static void FillChunk(World.Chunk chunk, RandomState randomState)
+        {
+            var baseX = chunk.Position.GetMinBlockX();
+            var baseZ = chunk.Position.GetMinBlockZ();
+
+            for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
+            {
+                for (var localZ = 0; localZ < WorldConstants.ChunkSize; localZ++)
+                {
+                    var worldX = baseX + localX;
+                    var worldZ = baseZ + localZ;
+                    FillAndSurfaceColumn(chunk, randomState, localX, localZ, worldX, worldZ);
+                }
+            }
+
+            chunk.FinishBulkFill();
+            chunk.MarkGenerated();
+        }
+
+        private static void FillAndSurfaceColumn(
+            World.Chunk chunk,
+            RandomState randomState,
+            int localX,
+            int localZ,
+            int worldX,
+            int worldZ)
+        {
+            var surfaceHint = SampleSurfaceHint(randomState, worldX, worldZ);
+            var scanTop = Math.Max(surfaceHint, WorldConstants.SeaLevel);
+            scanTop = Math.Min(scanTop + SurfaceOverhangMargin, WorldConstants.MaxY);
+
+            var topSolid = WorldConstants.MinY - 1;
+            var bedrockTop = WorldConstants.MinY + WorldConstants.BedrockLayers - 1;
+
+            for (var y = WorldConstants.MinY; y <= scanTop; y++)
+            {
+                var density = randomState.SampleTerrainDensity(worldX, y, worldZ);
+                if (density > 0.0)
+                {
+                    chunk.SetBlock(localX, y, localZ, BlockId.Stone, markDirty: false);
+                    topSolid = y;
+                    continue;
+                }
+
+                if (y <= WorldConstants.SeaLevel && y > bedrockTop)
+                {
+                    chunk.SetBlock(localX, y, localZ, BlockId.Water, markDirty: false);
+                }
+            }
+
+            ApplySurfaceForColumn(chunk, randomState, localX, localZ, worldX, worldZ, topSolid);
+        }
+
+        private static void ApplySurfaceForColumn(
+            World.Chunk chunk,
+            RandomState randomState,
+            int localX,
+            int localZ,
+            int worldX,
+            int worldZ,
+            int topSolid)
+        {
+            var bedrockTop = WorldConstants.MinY + WorldConstants.BedrockLayers - 1;
+            for (var y = WorldConstants.MinY; y <= bedrockTop; y++)
+            {
+                chunk.SetBlock(localX, y, localZ, BlockId.Bedrock, markDirty: false);
+            }
+
+            for (var y = bedrockTop + 1; y <= WorldConstants.SeaLevel; y++)
+            {
+                if (chunk.GetBlock(localX, y, localZ) == BlockId.Air)
+                {
+                    chunk.SetBlock(localX, y, localZ, BlockId.Water, markDirty: false);
+                }
+            }
+
+            if (topSolid <= bedrockTop)
+            {
+                return;
+            }
+
+            var climateCtx = new DensityContext
+            {
+                BlockX = worldX,
+                BlockY = topSolid,
+                BlockZ = worldZ
+            };
+            var continental = randomState.Router.Continents.Compute(in climateCtx);
+            var useSand = SurfaceRuleApplier.ShouldUseSandSurface(topSolid, (float)continental);
+            var surfaceStart = Math.Max(bedrockTop + 1, topSolid - WorldConstants.DirtDepth);
+
+            for (var y = surfaceStart; y <= topSolid; y++)
+            {
+                var block = SurfaceRuleApplier.GetBlockForColumn(y, topSolid, useSand);
+                if (block == BlockId.Air || block == BlockId.Stone)
+                {
+                    continue;
+                }
+
+                chunk.SetBlock(localX, y, localZ, block, markDirty: false);
+            }
+        }
+
+        public static int SampleSurfaceY(RandomState randomState, int worldX, int worldZ)
+        {
+            var hint = SampleSurfaceHint(randomState, worldX, worldZ);
+            if (hint >= WorldConstants.SeaLevel - 8)
+            {
+                return hint;
+            }
+
+            for (var y = WorldConstants.MaxY; y >= WorldConstants.MinY; y--)
+            {
+                if (randomState.SampleTerrainDensity(worldX, y, worldZ) > 0.0)
+                {
+                    return y;
+                }
+            }
+
+            return WorldConstants.SeaLevel;
+        }
+
+        private static int SampleSurfaceHint(RandomState randomState, int worldX, int worldZ)
+        {
+            var ctx = new DensityContext { BlockX = worldX, BlockY = 0, BlockZ = worldZ };
+            var preliminary = randomState.Router.PreliminarySurfaceLevel.Compute(in ctx);
+            if (!double.IsNaN(preliminary) && !double.IsInfinity(preliminary))
+            {
+                return (int)Math.Clamp(Math.Floor(preliminary), WorldConstants.MinY, WorldConstants.MaxY);
+            }
+
+            return WorldConstants.MinY - 1;
+        }
+    }
+}

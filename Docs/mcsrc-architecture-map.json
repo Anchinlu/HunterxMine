@@ -1,0 +1,27 @@
+{
+  "mappings": {
+    "net.minecraft.core.BlockPos": "MineCraftUnity.Core.BlockPos",
+    "net.minecraft.world.level.ChunkPos": "MineCraftUnity.Core.ChunkPos",
+    "net.minecraft.core.Direction": "MineCraftUnity.Core.Direction",
+    "net.minecraft.world.level.block.Block": "MineCraftUnity.Blocks.BlockDefinition",
+    "net.minecraft.world.level.block.state.BlockState": "MineCraftUnity.Blocks.BlockState",
+    "net.minecraft.world.level.block.Blocks": "MineCraftUnity.Blocks.BlockRegistry",
+    "net.minecraft.core.registries.BuiltInRegistries.BLOCK": "MineCraftUnity.Blocks.BlockRegistry",
+    "net.minecraft.world.level.chunk.LevelChunk": "MineCraftUnity.World.Chunk",
+    "net.minecraft.world.level.Level": "MineCraftUnity.World.Level",
+    "net.minecraft.world.level.chunk.ChunkGenerator": "MineCraftUnity.World.IChunkGenerator",
+    "net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator": "MineCraftUnity.World.OverworldGenerator",
+    "net.minecraft.client.multiplayer.ClientChunkCache": "MineCraftUnity.World.ChunkManager",
+    "net.minecraft.client.renderer.chunk.SectionRenderDispatcher.RenderSection": "MineCraftUnity.Rendering.ChunkRenderer",
+    "net.minecraft.client.renderer.block.ModelBlockRenderer": "MineCraftUnity.Rendering.ChunkMeshBuilder",
+    "net.minecraft.client.player.LocalPlayer": "MineCraftUnity.Player.PlayerController",
+    "net.minecraft.client.multiplayer.MultiPlayerGameMode": "MineCraftUnity.Player.BlockInteraction",
+    "net.fabricmc.loader": "MineCraftUnity.Mods.ModLoader",
+    "net.minecraft.client.main.Main": "MineCraftUnity.Bootstrap.GameBootstrap"
+  },
+  "notes": [
+    "Use https://mcsrc.dev/ to read Mojang architecture, then implement equivalent C# in this project.",
+    "Java Mixin hooks become Unity events, interfaces, or composition in C#.",
+    "Do not copy Mojang source code; only mirror structure and behavior."
+  ]
+}
