@@ -1,6 +1,7 @@
 using System;
 using MineCraftUnity.Blocks;
 using MineCraftUnity.Core;
+using MineCraftUnity.Rendering;
 using MineCraftUnity.World;
 using MineCraftUnity.WorldGen.Density;
 
@@ -12,64 +13,81 @@ namespace MineCraftUnity.WorldGen
     /// </summary>
     public static class NoiseBasedChunkFiller
     {
-        private const int SurfaceOverhangMargin = 32;
-
         public static void FillChunk(World.Chunk chunk, RandomState randomState)
         {
-            var baseX = chunk.Position.GetMinBlockX();
-            var baseZ = chunk.Position.GetMinBlockZ();
-
-            for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
+            using (ChunkProfilerMarkers.FillChunk.Auto())
             {
-                for (var localZ = 0; localZ < WorldConstants.ChunkSize; localZ++)
-                {
-                    var worldX = baseX + localX;
-                    var worldZ = baseZ + localZ;
-                    FillAndSurfaceColumn(chunk, randomState, localX, localZ, worldX, worldZ);
-                }
-            }
+                var baseX = chunk.Position.GetMinBlockX();
+                var baseZ = chunk.Position.GetMinBlockZ();
 
-            chunk.FinishBulkFill();
-            chunk.MarkGenerated();
+                BiomeVolumeFiller.FillChunkBiomes(chunk, randomState);
+
+                for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
+                {
+                    for (var localZ = 0; localZ < WorldConstants.ChunkSize; localZ++)
+                    {
+                        var worldX = baseX + localX;
+                        var worldZ = baseZ + localZ;
+                        var columnCache = new DensityEvaluationCache(worldX, worldZ);
+                        FillAndSurfaceColumn(chunk, randomState, columnCache, localX, localZ, worldX, worldZ);
+                    }
+                }
+
+                chunk.FinishBulkFill();
+                chunk.MarkGenerated();
+            }
         }
 
         private static void FillAndSurfaceColumn(
             World.Chunk chunk,
             RandomState randomState,
+            DensityEvaluationCache columnCache,
             int localX,
             int localZ,
             int worldX,
             int worldZ)
         {
-            var surfaceHint = SampleSurfaceHint(randomState, worldX, worldZ);
+            var surfaceHint = SampleSurfaceHint(randomState, worldX, worldZ, columnCache);
             var scanTop = Math.Max(surfaceHint, WorldConstants.SeaLevel);
-            scanTop = Math.Min(scanTop + SurfaceOverhangMargin, WorldConstants.MaxY);
+            scanTop = Math.Min(scanTop + WorldConstants.SurfaceOverhangMargin, WorldConstants.MaxY);
 
             var topSolid = WorldConstants.MinY - 1;
             var bedrockTop = WorldConstants.MinY + WorldConstants.BedrockLayers - 1;
+            var consecutiveAirAboveSolid = 0;
 
             for (var y = WorldConstants.MinY; y <= scanTop; y++)
             {
-                var density = randomState.SampleTerrainDensity(worldX, y, worldZ);
+                var density = randomState.SampleTerrainDensity(worldX, y, worldZ, columnCache);
                 if (density > 0.0)
                 {
                     chunk.SetBlock(localX, y, localZ, BlockId.Stone, markDirty: false);
                     topSolid = y;
+                    consecutiveAirAboveSolid = 0;
                     continue;
+                }
+
+                if (topSolid > bedrockTop)
+                {
+                    consecutiveAirAboveSolid++;
+                    if (consecutiveAirAboveSolid >= WorldConstants.SurfaceOverhangMargin)
+                    {
+                        break;
+                    }
                 }
 
                 if (y <= WorldConstants.SeaLevel && y > bedrockTop)
                 {
-                    chunk.SetBlock(localX, y, localZ, BlockId.Water, markDirty: false);
+                    chunk.SetWater(localX, y, localZ, FluidLevel.Source, markDirty: false);
                 }
             }
 
-            ApplySurfaceForColumn(chunk, randomState, localX, localZ, worldX, worldZ, topSolid);
+            ApplySurfaceForColumn(chunk, randomState, columnCache, localX, localZ, worldX, worldZ, topSolid);
         }
 
         private static void ApplySurfaceForColumn(
             World.Chunk chunk,
             RandomState randomState,
+            DensityEvaluationCache columnCache,
             int localX,
             int localZ,
             int worldX,
@@ -86,7 +104,7 @@ namespace MineCraftUnity.WorldGen
             {
                 if (chunk.GetBlock(localX, y, localZ) == BlockId.Air)
                 {
-                    chunk.SetBlock(localX, y, localZ, BlockId.Water, markDirty: false);
+                    chunk.SetWater(localX, y, localZ, FluidLevel.Source, markDirty: false);
                 }
             }
 
@@ -95,19 +113,14 @@ namespace MineCraftUnity.WorldGen
                 return;
             }
 
-            var climateCtx = new DensityContext
-            {
-                BlockX = worldX,
-                BlockY = topSolid,
-                BlockZ = worldZ
-            };
-            var continental = randomState.Router.Continents.Compute(in climateCtx);
-            var useSand = SurfaceRuleApplier.ShouldUseSandSurface(topSolid, (float)continental);
-            var surfaceStart = Math.Max(bedrockTop + 1, topSolid - WorldConstants.DirtDepth);
+            var biome = chunk.GetBiome(localX, topSolid, localZ);
+            var surfaceContext = new SurfaceRuleApplier.ColumnContext(
+                worldX, worldZ, topSolid, biome);
+            var surfaceStart = SurfaceRuleApplier.GetSurfaceLayerStart(surfaceContext, topSolid, bedrockTop);
 
             for (var y = surfaceStart; y <= topSolid; y++)
             {
-                var block = SurfaceRuleApplier.GetBlockForColumn(y, topSolid, useSand);
+                var block = SurfaceRuleApplier.GetBlockForColumn(y, surfaceContext);
                 if (block == BlockId.Air || block == BlockId.Stone)
                 {
                     continue;
@@ -119,7 +132,8 @@ namespace MineCraftUnity.WorldGen
 
         public static int SampleSurfaceY(RandomState randomState, int worldX, int worldZ)
         {
-            var hint = SampleSurfaceHint(randomState, worldX, worldZ);
+            var columnCache = new DensityEvaluationCache(worldX, worldZ);
+            var hint = SampleSurfaceHint(randomState, worldX, worldZ, columnCache);
             if (hint >= WorldConstants.SeaLevel - 8)
             {
                 return hint;
@@ -127,7 +141,7 @@ namespace MineCraftUnity.WorldGen
 
             for (var y = WorldConstants.MaxY; y >= WorldConstants.MinY; y--)
             {
-                if (randomState.SampleTerrainDensity(worldX, y, worldZ) > 0.0)
+                if (randomState.SampleTerrainDensity(worldX, y, worldZ, columnCache) > 0.0)
                 {
                     return y;
                 }
@@ -136,9 +150,16 @@ namespace MineCraftUnity.WorldGen
             return WorldConstants.SeaLevel;
         }
 
-        private static int SampleSurfaceHint(RandomState randomState, int worldX, int worldZ)
+        private static int SampleSurfaceHint(RandomState randomState, int worldX, int worldZ, DensityEvaluationCache columnCache)
         {
-            var ctx = new DensityContext { BlockX = worldX, BlockY = 0, BlockZ = worldZ };
+            columnCache.BeginSample();
+            var ctx = new DensityContext
+            {
+                BlockX = worldX,
+                BlockY = 0,
+                BlockZ = worldZ,
+                Cache = columnCache
+            };
             var preliminary = randomState.Router.PreliminarySurfaceLevel.Compute(in ctx);
             if (!double.IsNaN(preliminary) && !double.IsInfinity(preliminary))
             {

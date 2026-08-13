@@ -16,6 +16,7 @@ namespace MineCraftUnity.Rendering
         private MeshRenderer _meshRenderer;
         private MeshCollider _meshCollider;
         private Mesh _mesh;
+        private Mesh _collisionMesh;
 
         public ChunkPos ChunkPosition { get; private set; }
 
@@ -39,7 +40,23 @@ namespace MineCraftUnity.Rendering
             name = $"Chunk_{position.X}_{position.Z}";
         }
 
-        public void Rebuild(Chunk chunk, Level level, bool enableCollision)
+        public void ApplyMeshData(ChunkMeshData data)
+        {
+            BlockMaterialLibrary.EnsureInitialized();
+            _sharedMaterials ??= BlockMaterialLibrary.GetAllMaterials();
+
+            if (_mesh == null)
+            {
+                _mesh = new Mesh { name = $"ChunkMesh_{ChunkPosition}" };
+            }
+
+            ChunkMeshBuilder.ApplyMeshData(_mesh, data);
+            _meshFilter.sharedMesh = _mesh;
+            _meshRenderer.sharedMaterials = _sharedMaterials;
+            ApplyCollisionMesh(data);
+        }
+
+        public void Rebuild(Chunk chunk, Level level)
         {
             BlockMaterialLibrary.EnsureInitialized();
             _sharedMaterials ??= BlockMaterialLibrary.GetAllMaterials();
@@ -49,10 +66,38 @@ namespace MineCraftUnity.Rendering
                 _mesh = new Mesh { name = $"ChunkMesh_{chunk.Position}" };
             }
 
-            ChunkMeshBuilder.BuildInto(_mesh, chunk, level);
-            _meshFilter.sharedMesh = _mesh;
-            _meshRenderer.sharedMaterials = _sharedMaterials;
+            var data = ChunkMeshBuilder.ComputeMeshData(chunk, level);
+            ApplyMeshData(data);
+            chunk.IsMeshDirty = false;
+        }
 
+        private void ApplyCollisionMesh(ChunkMeshData data)
+        {
+            if (_meshCollider == null)
+            {
+                return;
+            }
+
+            if (data.CollisionVertices.Length == 0 || data.CollisionTriangles.Length == 0)
+            {
+                _meshCollider.sharedMesh = null;
+                return;
+            }
+
+            if (_collisionMesh == null)
+            {
+                _collisionMesh = new Mesh { name = $"ChunkCollision_{ChunkPosition}" };
+            }
+
+            _collisionMesh.Clear(false);
+            _collisionMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            _collisionMesh.SetVertices(data.CollisionVertices);
+            _collisionMesh.SetTriangles(data.CollisionTriangles, 0);
+            _collisionMesh.RecalculateBounds();
+        }
+
+        private void ApplyCollision(bool enableCollision)
+        {
             if (enableCollision && _mesh.vertexCount > 0)
             {
                 _meshCollider.sharedMesh = _mesh;
@@ -63,32 +108,31 @@ namespace MineCraftUnity.Rendering
                 _meshCollider.sharedMesh = null;
                 _meshCollider.enabled = false;
             }
-
-            chunk.IsMeshDirty = false;
         }
 
         public void SetCollisionEnabled(bool enabled)
         {
-            if (_meshCollider == null || _mesh == null || _mesh.vertexCount == 0)
+            if (_meshCollider == null)
             {
-                if (_meshCollider != null)
-                {
-                    _meshCollider.enabled = false;
-                }
-
                 return;
             }
 
-            if (enabled)
+            if (enabled && _collisionMesh != null && _collisionMesh.vertexCount > 0)
+            {
+                _meshCollider.sharedMesh = _collisionMesh;
+                _meshCollider.enabled = true;
+                return;
+            }
+
+            if (enabled && _mesh != null && _mesh.vertexCount > 0 && (_collisionMesh == null || _collisionMesh.vertexCount == 0))
             {
                 _meshCollider.sharedMesh = _mesh;
                 _meshCollider.enabled = true;
+                return;
             }
-            else
-            {
-                _meshCollider.sharedMesh = null;
-                _meshCollider.enabled = false;
-            }
+
+            _meshCollider.sharedMesh = null;
+            _meshCollider.enabled = false;
         }
     }
 }

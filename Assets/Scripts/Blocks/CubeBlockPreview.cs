@@ -66,6 +66,7 @@ namespace MineCraftUnity.Rendering
             BlockId.Sand => ChunkMeshLayer.Sand,
             BlockId.Water => ChunkMeshLayer.Water,
             BlockId.Bedrock => ChunkMeshLayer.Bedrock,
+            BlockId.Gravel => ChunkMeshLayer.Gravel,
             _ => null
         };
     }

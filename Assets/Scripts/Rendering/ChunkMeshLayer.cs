@@ -12,6 +12,7 @@ namespace MineCraftUnity.Rendering
         GrassBottom = 6,
         GrassSide = 7,
         GrassOverlay = 8,
-        Count = 9
+        Gravel = 9,
+        Count = 10
     }
 }

@@ -9,14 +9,16 @@ namespace MineCraftUnity.Blocks
         public readonly string Name;
         public readonly BlockRenderKind RenderKind;
         public readonly bool IsSolid;
+        public readonly bool IsFluid;
         public readonly bool CullsSameBlockFaces;
 
-        public BlockDefinition(BlockId id, string name, BlockRenderKind renderKind, bool isSolid, bool cullsSameBlockFaces)
+        public BlockDefinition(BlockId id, string name, BlockRenderKind renderKind, bool isSolid, bool isFluid, bool cullsSameBlockFaces)
         {
             Id = id;
             Name = name;
             RenderKind = renderKind;
             IsSolid = isSolid;
+            IsFluid = isFluid;
             CullsSameBlockFaces = cullsSameBlockFaces;
         }
     }

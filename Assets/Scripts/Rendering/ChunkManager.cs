@@ -1,5 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using MineCraftUnity.Core;
+using MineCraftUnity.UI;
 using MineCraftUnity.World;
 using UnityEngine;
 
@@ -18,9 +21,15 @@ namespace MineCraftUnity.Rendering
         public int Seed => seed;
         public int ViewDistance => viewDistance;
         public int LoadedChunkCount => _renderers.Count;
-        public int PendingGenerationCount => _generationList.Count;
-        public int PendingMeshCount => _meshList.Count;
+        public int PendingGenerationCount => _generationList.Count + _generationInFlight.Count;
+        public int PendingMeshCount => _meshList.Count + _meshInFlight.Count;
+        public int GenerationInFlightCount => _generationInFlight.Count;
+        public int MeshInFlightCount => _meshInFlight.Count;
+        public int PendingCollisionCount => _collisionQueue.Count;
+        public int PendingFluidTickCount => _fluidSimulator?.PendingTickCount ?? 0;
+        public bool IsSpawning => _spawnAreaCoroutine != null;
         public bool IsSpawnAreaReady { get; private set; }
+        public static string PipelineVersion => WorldConstants.PipelineVersion;
 
         private Level _level;
         private OverworldGenerator _generator;
@@ -36,6 +45,19 @@ namespace MineCraftUnity.Rendering
         private ChunkPos _lastCollisionCenter = new(int.MinValue, int.MinValue);
         private ChunkPos _priorityCenter = new(int.MinValue, int.MinValue);
         private float _chunkUpdateTimer;
+        private Coroutine _spawnAreaCoroutine;
+        private readonly HashSet<ChunkPos> _spawnChunks = new();
+
+        private readonly object _worldLock = new();
+        private ChunkGenerationWorker _generationWorker;
+        private ChunkMeshWorker _meshWorker;
+        private readonly HashSet<ChunkPos> _generationInFlight = new();
+        private readonly HashSet<ChunkPos> _meshInFlight = new();
+        private readonly Queue<ChunkPos> _collisionQueue = new();
+        private readonly HashSet<ChunkPos> _collisionScheduled = new();
+        private readonly Dictionary<ChunkPos, bool> _collisionDesired = new();
+        private readonly Dictionary<ChunkPos, bool> _collisionApplied = new();
+        private FluidSimulator _fluidSimulator;
 
         public Level Level
         {
@@ -64,10 +86,31 @@ namespace MineCraftUnity.Rendering
 
             _level = new Level(seed);
             _generator = new OverworldGenerator(seed);
+            _fluidSimulator = new FluidSimulator(_level);
+            WireLevelEvents();
+            _generationWorker ??= new ChunkGenerationWorker(WorldConstants.MaxParallelChunkWorkers);
+            _meshWorker ??= new ChunkMeshWorker(WorldConstants.MaxParallelChunkWorkers);
+        }
+
+        private void WireLevelEvents()
+        {
+            _level.BlockChanged += OnLevelBlockChanged;
+            _level.FluidTickRequested += pos => _fluidSimulator?.ScheduleTick(pos);
+        }
+
+        private void OnLevelBlockChanged(ChunkPos chunkPos)
+        {
+            if (!_neededChunks.Contains(chunkPos))
+            {
+                return;
+            }
+
+            ScheduleMesh(chunkPos);
         }
 
         private void Awake()
         {
+            BiomeRegistry.EnsureLoaded();
             EnsureInitialized();
             BlockMaterialLibrary.EnsureInitialized();
         }
@@ -88,8 +131,67 @@ namespace MineCraftUnity.Rendering
 
             if (followTarget != null)
             {
-                EnsureSpawnAreaReady();
+                BeginSpawnAreaLoad();
             }
+        }
+
+        private void BeginSpawnAreaLoad()
+        {
+            if (_spawnAreaCoroutine != null)
+            {
+                StopCoroutine(_spawnAreaCoroutine);
+            }
+
+            _spawnAreaCoroutine = StartCoroutine(EnsureSpawnAreaReadyCoroutine());
+        }
+
+        private IEnumerator EnsureSpawnAreaReadyCoroutine()
+        {
+            if (!Application.isPlaying)
+            {
+                yield break;
+            }
+
+            IsSpawnAreaReady = false;
+            EnsureInitialized();
+            ResetAsyncPipelineState();
+
+            var center = GetCenterChunkPos();
+            _priorityCenter = center;
+            var radius = Mathf.Max(collisionDistance, WorldConstants.SpawnPriorityRadius);
+
+            _spawnChunks.Clear();
+            for (var dx = -radius; dx <= radius; dx++)
+            {
+                for (var dz = -radius; dz <= radius; dz++)
+                {
+                    var pos = new ChunkPos(center.X + dx, center.Z + dz);
+                    _neededChunks.Add(pos);
+                    _spawnChunks.Add(pos);
+                    ScheduleGeneration(pos);
+                }
+            }
+
+            SortPendingWork(center);
+            var total = _spawnChunks.Count;
+
+            WorldLoadingOverlay.Show("Generating world…");
+            WorldLoadingOverlay.SetProgress(0f);
+
+            while (!AreAllSpawnChunksReady())
+            {
+                var ready = CountReadySpawnChunks();
+                WorldLoadingOverlay.SetProgress(total > 0 ? (float)ready / total : 1f);
+                yield return null;
+            }
+
+            WorldLoadingOverlay.SetProgress(1f);
+            UpdateCollisionStatesIfNeeded(center, force: true);
+            WorldLoadingOverlay.Hide();
+            IsSpawnAreaReady = true;
+            _spawnChunks.Clear();
+            _spawnAreaCoroutine = null;
+            UpdateChunkSet(force: true);
         }
 
         private void Update()
@@ -107,6 +209,17 @@ namespace MineCraftUnity.Rendering
             }
 
             ProcessQueues();
+            ProcessFluidTicks();
+        }
+
+        private void ProcessFluidTicks()
+        {
+            if (_fluidSimulator == null || !IsSpawnAreaReady)
+            {
+                return;
+            }
+
+            _fluidSimulator.ProcessTicks(WorldConstants.MaxFluidTicksPerFrame);
         }
 
         public void Configure(int newSeed, int newViewDistance, Transform target = null)
@@ -142,21 +255,28 @@ namespace MineCraftUnity.Rendering
             ClearWorld();
             _level = new Level(seed);
             _generator = new OverworldGenerator(seed);
+            _fluidSimulator = new FluidSimulator(_level);
+            WireLevelEvents();
             UpdateChunkSet(force: true);
             if (followTarget != null)
             {
-                EnsureSpawnAreaReady();
+                BeginSpawnAreaLoad();
             }
         }
 
         public void SetFollowTarget(Transform target)
         {
+            if (followTarget == target && (IsSpawnAreaReady || _spawnAreaCoroutine != null))
+            {
+                return;
+            }
+
             followTarget = target;
             IsSpawnAreaReady = false;
             if (Application.isPlaying)
             {
                 UpdateChunkSet(force: true);
-                EnsureSpawnAreaReady();
+                BeginSpawnAreaLoad();
             }
         }
 
@@ -173,7 +293,7 @@ namespace MineCraftUnity.Rendering
         }
 
         /// <summary>
-        /// Immediately generates and meshes the spawn chunk neighborhood so the player has ground on first frame.
+        /// Synchronous spawn load (editor/tests). Prefer <see cref="BeginSpawnAreaLoad"/> at runtime.
         /// </summary>
         public void EnsureSpawnAreaReady()
         {
@@ -193,12 +313,13 @@ namespace MineCraftUnity.Rendering
                 {
                     var pos = new ChunkPos(center.X + dx, center.Z + dz);
                     _neededChunks.Add(pos);
-                    GenerateAndMeshImmediate(pos, enableCollision: true);
+                    GenerateAndMeshImmediate(pos);
                 }
             }
 
             SortPendingWork(center);
             UpdateCollisionStatesIfNeeded(center, force: true);
+            ProcessCollisionQueue();
             IsSpawnAreaReady = true;
         }
 
@@ -246,20 +367,23 @@ namespace MineCraftUnity.Rendering
 
             RemoveFromPending(toRemove);
 
-            foreach (var pos in _neededChunks)
+            if (_spawnAreaCoroutine == null)
             {
-                var chunk = _level.GetOrCreateChunk(pos);
-                if (!chunk.IsGenerated)
+                foreach (var pos in _neededChunks)
                 {
-                    ScheduleGeneration(pos);
+                    var chunk = _level.GetOrCreateChunk(pos);
+                    if (!chunk.IsGenerated)
+                    {
+                        ScheduleGeneration(pos);
+                    }
+                    else if (chunk.IsMeshDirty || !_renderers.ContainsKey(pos))
+                    {
+                        ScheduleMesh(pos);
+                    }
                 }
-                else if (chunk.IsMeshDirty || !_renderers.ContainsKey(pos))
-                {
-                    ScheduleMesh(pos);
-                }
-            }
 
-            SortPendingWork(center);
+                SortPendingWork(center);
+            }
 
             if (!force)
             {
@@ -269,14 +393,170 @@ namespace MineCraftUnity.Rendering
 
         private void ProcessQueues()
         {
+            using (ChunkProfilerMarkers.ProcessQueues.Auto())
+            {
+                if (IsSpawnAreaReady || _spawnAreaCoroutine != null)
+                {
+                    DrainAsyncGenerationResults();
+                    DrainAsyncMeshResults();
+                    TryScheduleAsyncGeneration();
+                    TryScheduleAsyncMesh();
+                }
+                else if (_generationList.Count > 0)
+                {
+                    ProcessGenerationQueueSync();
+                }
+                else if (_meshList.Count > 0)
+                {
+                    ProcessMeshQueueSync();
+                }
+
+                ProcessCollisionQueue();
+            }
+        }
+
+        private void DrainAsyncGenerationResults()
+        {
+            while (_generationWorker.TryDequeueCompleted(out var pos))
+            {
+                _generationInFlight.Remove(pos);
+                if (!_neededChunks.Contains(pos))
+                {
+                    continue;
+                }
+
+                if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+                {
+                    continue;
+                }
+
+                _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
+                MarkAdjacentMeshesDirty(pos);
+                ScheduleMesh(pos);
+            }
+        }
+
+        private void DrainAsyncMeshResults()
+        {
+            var maxApply = _spawnAreaCoroutine != null
+                ? WorldConstants.MaxSpawnChunkMeshesPerFrame
+                : WorldConstants.MaxChunkMeshesPerFrame;
+
+            var applied = 0;
+            while (applied < maxApply &&
+                   _meshWorker.TryDequeueCompleted(out var result))
+            {
+                _meshInFlight.Remove(result.Position);
+                if (!_neededChunks.Contains(result.Position))
+                {
+                    continue;
+                }
+
+                ApplyMeshResult(result);
+                UnscheduleMesh(result.Position);
+                RequestCollisionState(result.Position, result.WithCollision);
+                applied++;
+            }
+
+            if (_generationList.Count == 0 && _generationInFlight.Count == 0 &&
+                _meshList.Count == 0 && _meshInFlight.Count == 0)
+            {
+                UpdateCollisionStatesIfNeeded(GetCenterChunkPos());
+            }
+        }
+
+        private void TryScheduleAsyncGeneration()
+        {
+            if (_generationList.Count == 0)
+            {
+                return;
+            }
+
             var center = _priorityCenter;
             if (center.X == int.MinValue)
             {
                 center = GetCenterChunkPos();
             }
 
+            SortPendingWork(center);
+
+            for (var i = 0; i < _generationList.Count;)
+            {
+                var pos = _generationList[i];
+                if (!_neededChunks.Contains(pos))
+                {
+                    _generationList.RemoveAt(i);
+                    _generationScheduled.Remove(pos);
+                    continue;
+                }
+
+                if (_generationWorker.TryStart(pos, _level, _generator, _worldLock, IsChunkStillNeeded))
+                {
+                    _generationInFlight.Add(pos);
+                    _generationList.RemoveAt(i);
+                    _generationScheduled.Remove(pos);
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        private void TryScheduleAsyncMesh()
+        {
+            if (_meshList.Count == 0)
+            {
+                return;
+            }
+
+            var center = _priorityCenter;
+            if (center.X == int.MinValue)
+            {
+                center = GetCenterChunkPos();
+            }
+
+            SortPendingWork(center);
+            var collisionCenter = GetCenterChunkPos();
+
+            for (var i = 0; i < _meshList.Count;)
+            {
+                var pos = _meshList[i];
+                if (!_neededChunks.Contains(pos))
+                {
+                    _meshList.RemoveAt(i);
+                    _meshScheduled.Remove(pos);
+                    continue;
+                }
+
+                if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+                {
+                    _meshList.RemoveAt(i);
+                    _meshScheduled.Remove(pos);
+                    continue;
+                }
+
+                var withCollision = IsWithinDistance(pos, collisionCenter, collisionDistance);
+                if (_meshWorker.TryStart(pos, _level, withCollision, _worldLock, IsChunkStillNeeded))
+                {
+                    _meshInFlight.Add(pos);
+                    _meshList.RemoveAt(i);
+                    _meshScheduled.Remove(pos);
+                    continue;
+                }
+
+                break;
+            }
+        }
+
+        private bool IsChunkStillNeeded(ChunkPos pos) => _neededChunks.Contains(pos);
+
+        private void ProcessGenerationQueueSync()
+        {
+            var generationStopwatch = Stopwatch.StartNew();
             var generated = 0;
-            while (_generationList.Count > 0 && generated < WorldConstants.MaxChunkGenerationsPerFrame)
+            while (_generationList.Count > 0 &&
+                   generated < WorldConstants.MaxChunkGenerationsPerFrame &&
+                   generationStopwatch.Elapsed.TotalMilliseconds < WorldConstants.GenerationBudgetMs)
             {
                 var pos = _generationList[0];
                 _generationList.RemoveAt(0);
@@ -293,14 +573,25 @@ namespace MineCraftUnity.Rendering
                     continue;
                 }
 
-                _generator.GenerateChunk(_level, chunk);
+                using (ChunkProfilerMarkers.GenerateChunk.Auto())
+                {
+                    _generator.GenerateChunk(_level, chunk);
+                }
+
+                _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
                 MarkAdjacentMeshesDirty(pos);
                 ScheduleMesh(pos);
                 generated++;
             }
+        }
 
+        private void ProcessMeshQueueSync()
+        {
+            var meshStopwatch = Stopwatch.StartNew();
             var meshed = 0;
-            while (_meshList.Count > 0 && meshed < WorldConstants.MaxChunkMeshesPerFrame)
+            while (_meshList.Count > 0 &&
+                   meshed < WorldConstants.MaxChunkMeshesPerFrame &&
+                   meshStopwatch.Elapsed.TotalMilliseconds < WorldConstants.MeshBudgetMs)
             {
                 var pos = _meshList[0];
                 _meshList.RemoveAt(0);
@@ -317,7 +608,8 @@ namespace MineCraftUnity.Rendering
                 }
 
                 var withCollision = IsWithinDistance(pos, GetCenterChunkPos(), collisionDistance);
-                EnsureRenderer(chunk, withCollision);
+                EnsureRenderer(chunk);
+                RequestCollisionState(pos, withCollision);
                 meshed++;
             }
 
@@ -327,42 +619,92 @@ namespace MineCraftUnity.Rendering
             }
         }
 
-        private void GenerateAndMeshImmediate(ChunkPos pos, bool enableCollision)
+        private void GenerateImmediate(ChunkPos pos)
         {
             var chunk = _level.GetOrCreateChunk(pos);
             if (!chunk.IsGenerated)
             {
-                _generator.GenerateChunk(_level, chunk);
+                using (ChunkProfilerMarkers.GenerateChunk.Auto())
+                {
+                    _generator.GenerateChunk(_level, chunk);
+                }
+
                 MarkAdjacentMeshesDirty(pos);
             }
 
             UnscheduleGeneration(pos);
-            EnsureRenderer(chunk, enableCollision);
-            UnscheduleMesh(pos);
         }
 
-        private void EnsureRenderer(Chunk chunk, bool withCollision)
+        private void MeshImmediate(ChunkPos pos)
         {
-            if (_renderers.TryGetValue(chunk.Position, out var existing))
+            if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
             {
-                if (chunk.IsMeshDirty)
-                {
-                    existing.Rebuild(chunk, _level, withCollision);
-                }
-                else
-                {
-                    existing.SetCollisionEnabled(withCollision);
-                }
-
                 return;
             }
 
-            var go = new GameObject();
-            go.transform.SetParent(transform, false);
-            var renderer = go.AddComponent<ChunkRenderer>();
-            renderer.Initialize(chunk.Position);
-            renderer.Rebuild(chunk, _level, withCollision);
-            _renderers[chunk.Position] = renderer;
+            EnsureRenderer(chunk);
+            UnscheduleMesh(pos);
+        }
+
+        private void GenerateAndMeshImmediate(ChunkPos pos)
+        {
+            GenerateImmediate(pos);
+            MeshImmediate(pos);
+        }
+
+        private void ApplyMeshResult(ChunkMeshResult result)
+        {
+            if (result.Data == null)
+            {
+                return;
+            }
+
+            if (!_level.TryGetChunk(result.Position, out var chunk))
+            {
+                return;
+            }
+
+            using (ChunkProfilerMarkers.EnsureRenderer.Auto())
+            {
+                if (_renderers.TryGetValue(result.Position, out var existing))
+                {
+                    existing.ApplyMeshData(result.Data);
+                }
+                else
+                {
+                    var go = new GameObject();
+                    go.transform.SetParent(transform, false);
+                    var renderer = go.AddComponent<ChunkRenderer>();
+                    renderer.Initialize(result.Position);
+                    renderer.ApplyMeshData(result.Data);
+                    _renderers[result.Position] = renderer;
+                }
+
+                chunk.IsMeshDirty = false;
+            }
+        }
+
+        private void EnsureRenderer(Chunk chunk)
+        {
+            using (ChunkProfilerMarkers.EnsureRenderer.Auto())
+            {
+                if (_renderers.TryGetValue(chunk.Position, out var existing))
+                {
+                    if (chunk.IsMeshDirty)
+                    {
+                        existing.Rebuild(chunk, _level);
+                    }
+
+                    return;
+                }
+
+                var go = new GameObject();
+                go.transform.SetParent(transform, false);
+                var renderer = go.AddComponent<ChunkRenderer>();
+                renderer.Initialize(chunk.Position);
+                renderer.Rebuild(chunk, _level);
+                _renderers[chunk.Position] = renderer;
+            }
         }
 
         private void MarkAdjacentMeshesDirty(ChunkPos pos)
@@ -465,8 +807,130 @@ namespace MineCraftUnity.Rendering
             foreach (var pair in _renderers)
             {
                 var enableCollision = IsWithinDistance(pair.Key, center, collisionDistance);
-                pair.Value.SetCollisionEnabled(enableCollision);
+                RequestCollisionState(pair.Key, enableCollision);
             }
+        }
+
+        private void RequestCollisionState(ChunkPos pos, bool enable)
+        {
+            _collisionDesired[pos] = enable;
+            if (_collisionApplied.TryGetValue(pos, out var applied) && applied == enable)
+            {
+                return;
+            }
+
+            if (_collisionScheduled.Add(pos))
+            {
+                _collisionQueue.Enqueue(pos);
+            }
+        }
+
+        private void ProcessCollisionQueue()
+        {
+            if (_collisionQueue.Count == 0)
+            {
+                return;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            var processed = 0;
+            while (_collisionQueue.Count > 0 &&
+                   processed < WorldConstants.MaxCollisionUpdatesPerFrame &&
+                   stopwatch.Elapsed.TotalMilliseconds < WorldConstants.CollisionBudgetMs)
+            {
+                var pos = _collisionQueue.Dequeue();
+                _collisionScheduled.Remove(pos);
+
+                if (!_collisionDesired.TryGetValue(pos, out var enable))
+                {
+                    continue;
+                }
+
+                if (_collisionApplied.TryGetValue(pos, out var applied) && applied == enable)
+                {
+                    continue;
+                }
+
+                if (!_renderers.TryGetValue(pos, out var renderer))
+                {
+                    continue;
+                }
+
+                renderer.SetCollisionEnabled(enable);
+                _collisionApplied[pos] = enable;
+                processed++;
+            }
+        }
+
+        private void ClearPendingQueues()
+        {
+            _generationList.Clear();
+            _generationScheduled.Clear();
+            _meshList.Clear();
+            _meshScheduled.Clear();
+        }
+
+        private void ResetAsyncPipelineState()
+        {
+            ClearPendingQueues();
+            _generationInFlight.Clear();
+            _meshInFlight.Clear();
+
+            if (_generationWorker != null)
+            {
+                while (_generationWorker.TryDequeueCompleted(out _))
+                {
+                }
+            }
+
+            if (_meshWorker != null)
+            {
+                while (_meshWorker.TryDequeueCompleted(out _))
+                {
+                }
+            }
+        }
+
+        private bool IsSpawnChunkReady(ChunkPos pos)
+        {
+            if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+            {
+                return false;
+            }
+
+            if (chunk.IsMeshDirty || !_renderers.ContainsKey(pos))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private int CountReadySpawnChunks()
+        {
+            var ready = 0;
+            foreach (var pos in _spawnChunks)
+            {
+                if (IsSpawnChunkReady(pos))
+                {
+                    ready++;
+                }
+            }
+
+            return ready;
+        }
+
+        private bool AreAllSpawnChunksReady()
+        {
+            foreach (var pos in _spawnChunks)
+            {
+                if (!IsSpawnChunkReady(pos))
+                {
+                    return false;
+                }
+            }
+
+            return _spawnChunks.Count > 0;
         }
 
         private static bool IsWithinDistance(ChunkPos a, ChunkPos b, int distance)
@@ -516,6 +980,22 @@ namespace MineCraftUnity.Rendering
 
         private void ClearWorld()
         {
+            _generationInFlight.Clear();
+            _meshInFlight.Clear();
+            if (_generationWorker != null)
+            {
+                while (_generationWorker.TryDequeueCompleted(out _))
+                {
+                }
+            }
+
+            if (_meshWorker != null)
+            {
+                while (_meshWorker.TryDequeueCompleted(out _))
+                {
+                }
+            }
+
             foreach (var renderer in _renderers.Values)
             {
                 if (renderer != null)
@@ -530,6 +1010,10 @@ namespace MineCraftUnity.Rendering
             _generationScheduled.Clear();
             _meshList.Clear();
             _meshScheduled.Clear();
+            _collisionQueue.Clear();
+            _collisionScheduled.Clear();
+            _collisionDesired.Clear();
+            _collisionApplied.Clear();
             _lastCenterChunk = new ChunkPos(int.MinValue, int.MinValue);
             _lastCollisionCenter = new ChunkPos(int.MinValue, int.MinValue);
             _priorityCenter = new ChunkPos(int.MinValue, int.MinValue);
@@ -537,6 +1021,8 @@ namespace MineCraftUnity.Rendering
 
         private void OnDestroy()
         {
+            _generationWorker?.Dispose();
+            _meshWorker?.Dispose();
             ClearWorld();
         }
     }

@@ -1,6 +1,8 @@
 using System.Text;
 using MineCraftUnity.Core;
+using MineCraftUnity.Player;
 using MineCraftUnity.Rendering;
+using MineCraftUnity.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -13,7 +15,12 @@ namespace MineCraftUnity.UI
     public sealed class GameStatsOverlay : MonoBehaviour
     {
         [SerializeField] private bool visibleOnStart = true;
-        [SerializeField] private bool logToConsole = true;
+        [SerializeField] private bool logToConsole =
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            true;
+#else
+            false;
+#endif
         [SerializeField] private bool logOnlyOnChange = true;
         [SerializeField] private float consoleHeartbeatInterval = 15f;
         [SerializeField] private Transform target;
@@ -37,10 +44,12 @@ namespace MineCraftUnity.UI
 
         private void Start()
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (_visible && logToConsole)
             {
                 LogStatsToConsole();
             }
+#endif
         }
 
         private void Update()
@@ -48,6 +57,7 @@ namespace MineCraftUnity.UI
             if (WasTogglePressed())
             {
                 _visible = !_visible;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 if (logToConsole)
                 {
                     Debug.Log(_visible ? "[MineCraft Debug] Overlay ON (F3)" : "[MineCraft Debug] Overlay OFF (F3)");
@@ -56,10 +66,12 @@ namespace MineCraftUnity.UI
                         LogStatsToConsole();
                     }
                 }
+#endif
             }
 
             _smoothedDeltaTime += (Time.unscaledDeltaTime - _smoothedDeltaTime) * 0.12f;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!_visible || !logToConsole)
             {
                 return;
@@ -80,6 +92,7 @@ namespace MineCraftUnity.UI
                 LogStatsToConsole();
                 _heartbeatTimer = consoleHeartbeatInterval;
             }
+#endif
         }
 
         private void OnGUI()
@@ -142,6 +155,17 @@ namespace MineCraftUnity.UI
             var loaded = chunkManager != null ? chunkManager.LoadedChunkCount : 0;
             var genQ = chunkManager != null ? chunkManager.PendingGenerationCount : 0;
             var meshQ = chunkManager != null ? chunkManager.PendingMeshCount : 0;
+            var genIf = chunkManager != null ? chunkManager.GenerationInFlightCount : 0;
+            var meshIf = chunkManager != null ? chunkManager.MeshInFlightCount : 0;
+            var collQ = chunkManager != null ? chunkManager.PendingCollisionCount : 0;
+            var spawning = chunkManager != null && chunkManager.IsSpawning;
+            var flying = target != null && target.TryGetComponent<PlayerController>(out var pc) && pc.IsFlying;
+            var biomeHash = 0;
+            if (chunkManager != null && target != null)
+            {
+                var pos = target.position;
+                biomeHash = (int)chunkManager.Level.GetBiome(blockX, blockY, blockZ);
+            }
 
             unchecked
             {
@@ -153,6 +177,12 @@ namespace MineCraftUnity.UI
                 hash = hash * 31 + loaded;
                 hash = hash * 31 + genQ;
                 hash = hash * 31 + meshQ;
+                hash = hash * 31 + genIf;
+                hash = hash * 31 + meshIf;
+                hash = hash * 31 + collQ;
+                hash = hash * 31 + (spawning ? 1 : 0);
+                hash = hash * 31 + (flying ? 1 : 0);
+                hash = hash * 31 + biomeHash;
                 return hash;
             }
         }
@@ -195,6 +225,18 @@ namespace MineCraftUnity.UI
 
                 text.Append(" | XYZ=").Append(blockX).Append('/').Append(blockY).Append('/').Append(blockZ);
                 text.Append(" | Chunk=").Append(chunkX).Append(',').Append(chunkZ);
+
+                if (chunkManager != null)
+                {
+                    var biome = chunkManager.Level.GetBiome(blockX, blockY, blockZ);
+                    text.Append(" | Biome=").Append(BiomeRegistry.GetDisplayName(biome));
+                }
+
+                var controller = target.GetComponent<PlayerController>();
+                if (controller != null && controller.IsFlying)
+                {
+                    text.Append(" | Fly=ON");
+                }
             }
 
             text.Append(" | RAM=").Append(allocatedMb.ToString("0.0")).Append("MB");
@@ -203,7 +245,30 @@ namespace MineCraftUnity.UI
             {
                 text.Append(" | Chunks=").Append(chunkManager.LoadedChunkCount);
                 text.Append(" | Q=").Append(chunkManager.PendingGenerationCount).Append('g').Append('/').Append(chunkManager.PendingMeshCount).Append('m');
+                text.Append(" if=").Append(chunkManager.GenerationInFlightCount).Append('g').Append('/').Append(chunkManager.MeshInFlightCount).Append('m');
+                if (chunkManager.PendingCollisionCount > 0)
+                {
+                    text.Append(" coll=").Append(chunkManager.PendingCollisionCount);
+                }
+
+                if (chunkManager.PendingFluidTickCount > 0)
+                {
+                    text.Append(" H2O=").Append(chunkManager.PendingFluidTickCount);
+                }
+
+                text.Append(" | Pipe=").Append(ChunkManager.PipelineVersion);
+                if (chunkManager.IsSpawning)
+                {
+                    text.Append(" Spawn=YES");
+                }
+
                 text.Append(" | Seed=").Append(chunkManager.Seed).Append(" View=").Append(chunkManager.ViewDistance);
+            }
+
+            var dayNight = DayNightController.Instance;
+            if (dayNight != null)
+            {
+                text.Append(" | Time=").Append(WorldTime.FormatClock(dayNight.WorldTime.DayTime));
             }
         }
 
@@ -235,6 +300,18 @@ namespace MineCraftUnity.UI
                 text.AppendLine($"XYZ block: {blockX} / {blockY} / {blockZ}");
                 text.AppendLine($"Chunk vùng: {chunkX}, {chunkZ}  (local {localX}, {localZ})");
                 text.AppendLine($"Section Y: {FloorSectionY(blockY)}  (sea {WorldConstants.SeaLevel})");
+
+                if (chunkManager != null)
+                {
+                    var biome = chunkManager.Level.GetBiome(blockX, blockY, blockZ);
+                    text.AppendLine($"Biome: {BiomeRegistry.GetDisplayName(biome)}");
+                }
+
+                var controller = target.GetComponent<PlayerController>();
+                if (controller != null)
+                {
+                    text.AppendLine($"Fly: {(controller.IsFlying ? "ON (F)" : "OFF")}");
+                }
             }
             else
             {
@@ -245,7 +322,16 @@ namespace MineCraftUnity.UI
             {
                 text.AppendLine($"Chunks: {chunkManager.LoadedChunkCount} loaded");
                 text.AppendLine($"Queue: {chunkManager.PendingGenerationCount} gen, {chunkManager.PendingMeshCount} mesh");
+                text.AppendLine($"In-flight: {chunkManager.GenerationInFlightCount} gen, {chunkManager.MeshInFlightCount} mesh");
+                text.AppendLine($"Collision queue: {chunkManager.PendingCollisionCount}");
+                text.AppendLine($"Pipeline: {ChunkManager.PipelineVersion}  Spawn: {(chunkManager.IsSpawning ? "loading" : "ready")}");
                 text.AppendLine($"Seed: {chunkManager.Seed}  View: {chunkManager.ViewDistance}");
+            }
+
+            var dayNight = DayNightController.Instance;
+            if (dayNight != null)
+            {
+                text.AppendLine($"Time: {WorldTime.FormatClock(dayNight.WorldTime.DayTime)}  (MC day/24000)");
             }
         }
 

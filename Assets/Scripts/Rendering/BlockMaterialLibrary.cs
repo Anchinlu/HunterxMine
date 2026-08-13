@@ -9,8 +9,7 @@ namespace MineCraftUnity.Rendering
     public static class BlockMaterialLibrary
     {
         private const string TextureRoot = "Assets/Minecraft/Blocks";
-        private static readonly Color PlainsGrassTint = new(145f / 255f, 189f / 255f, 89f / 255f, 1f);
-        private static readonly Color WaterTint = new(0.25f, 0.45f, 0.85f, 0.75f);
+        private static readonly Color WaterMaterialTint = new(0.25f, 0.45f, 0.85f, 0.75f);
 
         private static Material[] _materials;
         private static bool _initialized;
@@ -40,10 +39,11 @@ namespace MineCraftUnity.Rendering
             _materials[(int)ChunkMeshLayer.Sand] = CreateCubeMaterial("sand/Textures/sand.png");
             _materials[(int)ChunkMeshLayer.Water] = CreateWaterMaterial("water/Textures/water_still.png");
             _materials[(int)ChunkMeshLayer.Bedrock] = CreateCubeMaterial("bedrock/Textures/bedrock.png");
-            _materials[(int)ChunkMeshLayer.GrassTop] = CreateTintMaterial("grass_block/Textures/grass_block_top.png", PlainsGrassTint);
+            _materials[(int)ChunkMeshLayer.GrassTop] = CreateTintMaterial("grass_block/Textures/grass_block_top.png", Color.white);
             _materials[(int)ChunkMeshLayer.GrassBottom] = CreateCubeMaterial("grass_block/Textures/dirt.png");
             _materials[(int)ChunkMeshLayer.GrassSide] = CreateCubeMaterial("grass_block/Textures/grass_block_side.png");
-            _materials[(int)ChunkMeshLayer.GrassOverlay] = CreateOverlayMaterial("grass_block/Textures/grass_block_side_overlay.png", PlainsGrassTint);
+            _materials[(int)ChunkMeshLayer.GrassOverlay] = CreateOverlayMaterial("grass_block/Textures/grass_block_side_overlay.png", Color.white);
+            _materials[(int)ChunkMeshLayer.Gravel] = CreateCubeMaterial("gravel/Textures/gravel.png");
             _initialized = true;
         }
 
@@ -82,17 +82,32 @@ namespace MineCraftUnity.Rendering
             var shader = Shader.Find("MineCraft/BlockUnlit") ?? Shader.Find("Universal Render Pipeline/Unlit");
             var mat = new Material(shader) { name = $"Mat_{System.IO.Path.GetFileNameWithoutExtension(relativePath)}" };
             SetTexture(mat, texture);
-            SetColor(mat, tint);
+            SetColor(mat, Color.white);
             return mat;
         }
 
         private static Material CreateWaterMaterial(string relativePath)
         {
             var texture = LoadTexture(relativePath);
-            var shader = Shader.Find("MineCraft/BlockUnlit") ?? Shader.Find("Universal Render Pipeline/Unlit");
+            var shader = Shader.Find("MineCraft/Water") ?? Shader.Find("Universal Render Pipeline/Unlit");
             var mat = new Material(shader) { name = "Mat_Water" };
             SetTexture(mat, texture);
-            SetColor(mat, WaterTint);
+            SetColor(mat, WaterMaterialTint);
+            if (mat.HasProperty("_FrameCount"))
+            {
+                mat.SetFloat("_FrameCount", 32f);
+            }
+
+            if (mat.HasProperty("_FrameTime"))
+            {
+                mat.SetFloat("_FrameTime", 1f);
+            }
+
+            if (mat.HasProperty("_TickRate"))
+            {
+                mat.SetFloat("_TickRate", 20f);
+            }
+
             mat.renderQueue = 3000;
             return mat;
         }

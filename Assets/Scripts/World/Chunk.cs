@@ -11,6 +11,8 @@ namespace MineCraftUnity.World
     {
         public ChunkPos Position { get; }
         private readonly BlockId[] _blocks = new BlockId[WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize];
+        private readonly byte[] _fluidLevels = new byte[WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize];
+        private readonly BiomeId[] _quartBiomes = new BiomeId[WorldConstants.BiomeQuartVolume];
         public bool IsGenerated { get; private set; }
         public bool IsMeshDirty { get; set; } = true;
 
@@ -34,6 +36,16 @@ namespace MineCraftUnity.World
             return _blocks[ToIndex(localX, y, localZ)];
         }
 
+        public byte GetFluidLevel(int localX, int y, int localZ)
+        {
+            if (!IsInside(localX, y, localZ))
+            {
+                return FluidLevel.Source;
+            }
+
+            return _fluidLevels[ToIndex(localX, y, localZ)];
+        }
+
         public void SetBlock(int localX, int y, int localZ, BlockId id, bool markDirty = true)
         {
             if (!IsInside(localX, y, localZ))
@@ -41,8 +53,50 @@ namespace MineCraftUnity.World
                 return;
             }
 
-            _blocks[ToIndex(localX, y, localZ)] = id;
+            var index = ToIndex(localX, y, localZ);
+            _blocks[index] = id;
+            if (id == BlockId.Water)
+            {
+                _fluidLevels[index] = FluidLevel.Source;
+            }
+            else
+            {
+                _fluidLevels[index] = 0;
+            }
+
             TrackBounds(y, id);
+
+            if (markDirty)
+            {
+                IsMeshDirty = true;
+            }
+        }
+
+        public void SetFluidLevel(int localX, int y, int localZ, byte level, bool markDirty = true)
+        {
+            if (!IsInside(localX, y, localZ))
+            {
+                return;
+            }
+
+            _fluidLevels[ToIndex(localX, y, localZ)] = FluidLevel.ClampFlow(level);
+            if (markDirty)
+            {
+                IsMeshDirty = true;
+            }
+        }
+
+        public void SetWater(int localX, int y, int localZ, byte level, bool markDirty = true)
+        {
+            if (!IsInside(localX, y, localZ))
+            {
+                return;
+            }
+
+            var index = ToIndex(localX, y, localZ);
+            _blocks[index] = BlockId.Water;
+            _fluidLevels[index] = FluidLevel.ClampFlow(level);
+            TrackBounds(y, BlockId.Water);
 
             if (markDirty)
             {
@@ -54,6 +108,38 @@ namespace MineCraftUnity.World
         {
             IsMeshDirty = true;
         }
+
+        public BiomeId GetBiome(int localX, int y, int localZ)
+        {
+            if (localX is < 0 or >= WorldConstants.ChunkSize ||
+                localZ is < 0 or >= WorldConstants.ChunkSize ||
+                y is < WorldConstants.MinY or > WorldConstants.MaxY)
+            {
+                return BiomeId.Unknown;
+            }
+
+            var quartX = localX >> 2;
+            var quartZ = localZ >> 2;
+            var quartY = (y - WorldConstants.MinY) >> 2;
+            return _quartBiomes[ToQuartIndex(quartX, quartY, quartZ)];
+        }
+
+        public void SetQuartBiome(int quartX, int quartY, int quartZ, BiomeId biome)
+        {
+            if (quartX is < 0 or >= WorldConstants.BiomeQuartCountXZ ||
+                quartZ is < 0 or >= WorldConstants.BiomeQuartCountXZ ||
+                quartY is < 0 or >= WorldConstants.BiomeQuartCountY)
+            {
+                return;
+            }
+
+            _quartBiomes[ToQuartIndex(quartX, quartY, quartZ)] = biome;
+        }
+
+        public static int ToQuartIndex(int quartX, int quartY, int quartZ) =>
+            quartY * WorldConstants.BiomeQuartCountXZ * WorldConstants.BiomeQuartCountXZ +
+            quartZ * WorldConstants.BiomeQuartCountXZ +
+            quartX;
 
         public bool HasBlocks => MinFilledY <= MaxFilledY;
 

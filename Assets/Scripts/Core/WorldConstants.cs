@@ -1,3 +1,5 @@
+using System;
+
 namespace MineCraftUnity.Core
 {
     /// <summary>
@@ -17,13 +19,46 @@ namespace MineCraftUnity.Core
         public const int CollisionDistance = 2;
         public const int SpawnPriorityRadius = 1;
 
-        /// <summary>Spread chunk generation across frames (MC density is CPU-heavy).</summary>
+        /// <summary>Max ms spent generating chunks per frame (time-budget queue).</summary>
+        public const float GenerationBudgetMs = 4f;
+
+        /// <summary>Max ms spent meshing chunks per frame (time-budget queue).</summary>
+        public const float MeshBudgetMs = 4f;
+
+        /// <summary>Safety cap on chunk gen count per frame (in addition to time budget).</summary>
         public const int MaxChunkGenerationsPerFrame = 1;
 
-        /// <summary>Spread mesh building across frames (heaviest step).</summary>
+        /// <summary>Safety cap on chunk mesh count per frame (in addition to time budget).</summary>
         public const int MaxChunkMeshesPerFrame = 2;
+
+        /// <summary>Higher mesh-apply cap while spawn overlay is active (GPU upload only).</summary>
+        public const int MaxSpawnChunkMeshesPerFrame = 4;
+
+        /// <summary>Extra blocks scanned above surface hint for overhangs (Phase 2 tuning).</summary>
+        public const int SurfaceOverhangMargin = 20;
+
+        /// <summary>Parallel chunk workers (generation + mesh compute).</summary>
+        public static int MaxParallelChunkWorkers => Math.Max(1, Environment.ProcessorCount - 1);
+
+        /// <summary>Max physics mesh cooks per frame (MeshCollider.sharedMesh is very expensive).</summary>
+        public const int MaxCollisionUpdatesPerFrame = 1;
+
+        /// <summary>Max ms spent on deferred collision updates per frame.</summary>
+        public const float CollisionBudgetMs = 4f;
+
+        /// <summary>Debug tag for F3 overlay — bump when pipeline behavior changes.</summary>
+        public const string PipelineVersion = "P7";
+
+        /// <summary>MC biome resolution — one biome cell per 4×4×4 blocks.</summary>
+        public const int BiomeQuartSize = 4;
+        public const int BiomeQuartCountXZ = ChunkSize / BiomeQuartSize;
+        public const int BiomeQuartCountY = Height / BiomeQuartSize;
+        public const int BiomeQuartVolume = BiomeQuartCountXZ * BiomeQuartCountXZ * BiomeQuartCountY;
 
         /// <summary>How often to check if the player moved to a new chunk.</summary>
         public const float ChunkUpdateInterval = 0.35f;
+
+        /// <summary>Max water flow ticks processed per frame.</summary>
+        public const int MaxFluidTicksPerFrame = 8;
     }
 }

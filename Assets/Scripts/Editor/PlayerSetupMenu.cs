@@ -20,7 +20,7 @@ namespace MineCraftUnity.Editor
 
             PositionPlayer(player.transform);
             Selection.activeGameObject = player;
-            Debug.Log("[MineCraft] Player ready. Press Play, click game view, use WASD + mouse. Esc unlocks cursor.");
+            Debug.Log("[MineCraft] Player ready. WASD + mouse, F = fly, Space/Ctrl = up/down while flying, Esc = unlock cursor.");
         }
 
         private static GameObject CreatePlayerObject()
@@ -49,8 +49,11 @@ namespace MineCraftUnity.Editor
                 camera.transform.localRotation = Quaternion.identity;
                 camera.fieldOfView = 70f;
                 camera.farClipPlane = 512f;
-                camera.clearFlags = CameraClearFlags.SolidColor;
-                camera.backgroundColor = new Color(0.53f, 0.81f, 0.98f);
+                camera.clearFlags = CameraClearFlags.Skybox;
+                if (camera.GetComponent<UnderwaterCameraEffect>() == null)
+                {
+                    camera.gameObject.AddComponent<UnderwaterCameraEffect>();
+                }
             }
             else
             {
@@ -59,6 +62,7 @@ namespace MineCraftUnity.Editor
                 cameraGo.transform.SetParent(cameraRoot, false);
                 camera = cameraGo.AddComponent<Camera>();
                 cameraGo.AddComponent<AudioListener>();
+                cameraGo.AddComponent<UnderwaterCameraEffect>();
                 camera.fieldOfView = 70f;
             }
 

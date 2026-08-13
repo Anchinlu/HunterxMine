@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using MineCraftUnity.WorldGen.Synth;
 
 namespace MineCraftUnity.WorldGen.Density
@@ -212,8 +213,11 @@ namespace MineCraftUnity.WorldGen.Density
 
         private sealed class MarkerFunction : IDensityFunction
         {
+            private static int _nextCacheId;
+
             private readonly MarkerType _type;
             private readonly IDensityFunction _wrapped;
+            private readonly int _cacheId = Interlocked.Increment(ref _nextCacheId);
 
             public MarkerFunction(MarkerType type, IDensityFunction wrapped)
             {
@@ -221,7 +225,41 @@ namespace MineCraftUnity.WorldGen.Density
                 _wrapped = wrapped;
             }
 
-            public double Compute(in DensityContext context) => _wrapped.Compute(in context);
+            public double Compute(in DensityContext context)
+            {
+                var cache = context.Cache;
+                if (cache == null)
+                {
+                    return _wrapped.Compute(in context);
+                }
+
+                switch (_type)
+                {
+                    case MarkerType.Cache2D:
+                    case MarkerType.FlatCache:
+                        if (cache.TryGetCache2d(_cacheId, in context, out var cached2d))
+                        {
+                            return cached2d;
+                        }
+
+                        var value2d = _wrapped.Compute(in context);
+                        cache.SetCache2d(_cacheId, value2d);
+                        return value2d;
+
+                    case MarkerType.CacheOnce:
+                        if (cache.TryGetCacheOnce(_cacheId, out var cachedOnce))
+                        {
+                            return cachedOnce;
+                        }
+
+                        var valueOnce = _wrapped.Compute(in context);
+                        cache.SetCacheOnce(_cacheId, valueOnce);
+                        return valueOnce;
+
+                    default:
+                        return _wrapped.Compute(in context);
+                }
+            }
 
             public double MinValue => _type == MarkerType.BlendDensity ? double.NegativeInfinity : _wrapped.MinValue;
 

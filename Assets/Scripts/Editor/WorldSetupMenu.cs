@@ -38,6 +38,13 @@ namespace MineCraftUnity.Editor
                 world.AddComponent<GameStatsOverlay>();
             }
 
+            if (world.GetComponent<PerformanceBaselineRecorder>() == null)
+            {
+                world.AddComponent<PerformanceBaselineRecorder>();
+            }
+
+            DayNightController.EnsureOnWorld(world);
+
             EnsurePlayer(manager);
 
             Selection.activeGameObject = world;

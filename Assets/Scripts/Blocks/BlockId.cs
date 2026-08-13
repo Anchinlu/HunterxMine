@@ -11,6 +11,7 @@ namespace MineCraftUnity.Blocks
         Stone = 3,
         Sand = 4,
         Water = 5,
-        Bedrock = 6
+        Bedrock = 6,
+        Gravel = 7
     }
 }

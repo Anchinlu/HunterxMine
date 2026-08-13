@@ -14,6 +14,7 @@ namespace MineCraftUnity.WorldGen
         public static string DensityFunctionDirectory => Resolve($"{AssetsRoot}/density_function");
         public static string NoiseSettingsOverworld => Resolve($"{AssetsRoot}/noise_settings/overworld.json");
         public static string MultiNoiseOverworld => Resolve($"{AssetsRoot}/multi_noise_biome_source_parameter_list/overworld.json");
+        public static string BiomeDirectory => Resolve($"{AssetsRoot}/biome");
 
         private static string Resolve(string relative)
         {

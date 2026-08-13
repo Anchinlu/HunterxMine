@@ -20,7 +20,8 @@ namespace MineCraftUnity.Editor
             (BlockId.Sand, "Preview_Sand", 3f),
             (BlockId.Water, "Preview_Water", 4.5f),
             (BlockId.Bedrock, "Preview_Bedrock", 6f),
-            (BlockId.GrassBlock, "Preview_GrassBlock", 7.5f)
+            (BlockId.GrassBlock, "Preview_GrassBlock", 7.5f),
+            (BlockId.Gravel, "Preview_Gravel", 9f)
         };
 
         [MenuItem("MineCraft/Setup/Configure All Block Textures")]
@@ -91,6 +92,8 @@ namespace MineCraftUnity.Editor
                 $"{TextureRoot}/sand/Textures/sand.png",
                 $"{TextureRoot}/water/Textures/water_still.png",
                 $"{TextureRoot}/bedrock/Textures/bedrock.png",
+                $"{TextureRoot}/gravel/Textures/gravel.png",
+                $"{TextureRoot}/water/Textures/water_flow.png",
                 $"{TextureRoot}/grass_block/Textures/grass_block_top.png",
                 $"{TextureRoot}/grass_block/Textures/grass_block_side.png",
                 $"{TextureRoot}/grass_block/Textures/grass_block_side_overlay.png",

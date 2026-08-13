@@ -1,3 +1,5 @@
+using MineCraftUnity.Rendering;
+using MineCraftUnity.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -16,6 +18,17 @@ namespace MineCraftUnity.Player
         [SerializeField] private float jumpHeight = 1.25f;
         [SerializeField] private float gravity = -20f;
 
+        [Header("Water")]
+        [SerializeField] private float swimSpeed = 2.2f;
+        [SerializeField] private float swimSprintSpeed = 3.4f;
+        [SerializeField] private float waterGravity = -6f;
+        [SerializeField] private float swimAscendSpeed = 3.5f;
+        [SerializeField] private ChunkManager chunkManager;
+
+        [Header("Fly")]
+        [SerializeField] private float flySpeed = 8f;
+        [SerializeField] private float flySprintMultiplier = 2f;
+
         [Header("Look")]
         [SerializeField] private float mouseSensitivity = 0.15f;
         [SerializeField] private float minPitch = -89f;
@@ -28,13 +41,42 @@ namespace MineCraftUnity.Player
         private CharacterController _controller;
         private float _verticalVelocity;
         private float _cameraPitch;
+        private bool _isFlying;
 
         public Vector3 Position => transform.position;
+        public bool IsFlying => _isFlying;
+        public bool IsInWater { get; private set; }
+        public bool IsHeadUnderwater { get; private set; }
 
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
             ResolveCameraRoot();
+            EnsureUnderwaterEffect();
+            if (chunkManager == null)
+            {
+                chunkManager = FindFirstObjectByType<ChunkManager>();
+            }
+        }
+
+        private void EnsureUnderwaterEffect()
+        {
+            if (cameraRoot == null)
+            {
+                return;
+            }
+
+            var camera = cameraRoot.GetComponentInChildren<Camera>();
+            if (camera == null)
+            {
+                return;
+            }
+
+            if (camera.GetComponent<UnderwaterCameraEffect>() == null)
+            {
+                var effect = camera.gameObject.AddComponent<UnderwaterCameraEffect>();
+                effect.enabled = true;
+            }
         }
 
         private void Start()
@@ -47,6 +89,8 @@ namespace MineCraftUnity.Player
 
         private void Update()
         {
+            UpdateWaterState();
+
             if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
             {
                 UnlockCursor();
@@ -59,15 +103,70 @@ namespace MineCraftUnity.Player
 
             if (Cursor.lockState != CursorLockMode.Locked)
             {
-                ApplyGravityOnly();
+                if (!_isFlying)
+                {
+                    ApplyGravityOnly();
+                }
+
                 return;
             }
 
             HandleLook();
-            HandleMove();
+            TryToggleFly();
+
+            if (_isFlying)
+            {
+                HandleFlyMove();
+            }
+            else if (IsInWater)
+            {
+                HandleSwimMove();
+            }
+            else
+            {
+                HandleMove();
+            }
+        }
+
+        private void UpdateWaterState()
+        {
+            IsInWater = false;
+            IsHeadUnderwater = false;
+            if (chunkManager == null)
+            {
+                return;
+            }
+
+            var level = chunkManager.Level;
+            var body = transform.position + Vector3.up * (_controller.height * 0.35f);
+            var head = transform.position + Vector3.up * (_controller.height * 0.9f);
+
+            IsInWater = level.IsWaterAt(
+                Mathf.FloorToInt(body.x),
+                Mathf.FloorToInt(body.y),
+                Mathf.FloorToInt(body.z));
+
+            IsHeadUnderwater = level.IsWaterAt(
+                Mathf.FloorToInt(head.x),
+                Mathf.FloorToInt(head.y),
+                Mathf.FloorToInt(head.z));
+        }
+
+        private void TryToggleFly()
+        {
+            var keyboard = Keyboard.current;
+            if (keyboard == null || !keyboard.fKey.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            _isFlying = !_isFlying;
+            _verticalVelocity = 0f;
         }
 
         public void SetCameraRoot(Transform root) => cameraRoot = root;
+
+        public void SetChunkManager(ChunkManager manager) => chunkManager = manager;
 
         private void ResolveCameraRoot()
         {
@@ -106,24 +205,10 @@ namespace MineCraftUnity.Player
                 return;
             }
 
-            var input = Vector2.zero;
-            if (keyboard.wKey.isPressed) input.y += 1f;
-            if (keyboard.sKey.isPressed) input.y -= 1f;
-            if (keyboard.aKey.isPressed) input.x -= 1f;
-            if (keyboard.dKey.isPressed) input.x += 1f;
-
-            if (input.sqrMagnitude > 1f)
-            {
-                input.Normalize();
-            }
+            var input = ReadHorizontalInput(keyboard);
 
             var speed = keyboard.leftShiftKey.isPressed ? sprintSpeed : walkSpeed;
-            var forward = transform.forward;
-            forward.y = 0f;
-            forward.Normalize();
-            var right = transform.right;
-            right.y = 0f;
-            right.Normalize();
+            GetHorizontalBasis(out var forward, out var right);
 
             var move = (forward * input.y + right * input.x) * speed;
 
@@ -144,6 +229,121 @@ namespace MineCraftUnity.Player
             move.y = _verticalVelocity;
 
             _controller.Move(move * Time.deltaTime);
+        }
+
+        private void HandleSwimMove()
+        {
+            var keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                return;
+            }
+
+            var input = ReadHorizontalInput(keyboard);
+            var speed = keyboard.leftShiftKey.isPressed ? swimSprintSpeed : swimSpeed;
+            GetHorizontalBasis(out var forward, out var right);
+
+            var move = forward * input.y + right * input.x;
+            if (move.sqrMagnitude > 1f)
+            {
+                move.Normalize();
+            }
+
+            move *= speed;
+
+            if (keyboard.spaceKey.isPressed)
+            {
+                move.y += swimAscendSpeed;
+            }
+            else if (!IsHeadUnderwater)
+            {
+                _verticalVelocity = Mathf.Max(_verticalVelocity, -1f);
+            }
+
+            _verticalVelocity += waterGravity * Time.deltaTime;
+            move.y += _verticalVelocity;
+
+            _controller.Move(move * Time.deltaTime);
+
+            if (_controller.isGrounded && _verticalVelocity < 0f)
+            {
+                _verticalVelocity = -1f;
+            }
+        }
+
+        private void HandleFlyMove()
+        {
+            var keyboard = Keyboard.current;
+            if (keyboard == null)
+            {
+                return;
+            }
+
+            var input = ReadHorizontalInput(keyboard);
+            var speed = keyboard.leftShiftKey.isPressed
+                ? flySpeed * flySprintMultiplier
+                : flySpeed;
+
+            GetHorizontalBasis(out var forward, out var right);
+            var move = forward * input.y + right * input.x;
+
+            if (keyboard.spaceKey.isPressed)
+            {
+                move.y += 1f;
+            }
+
+            if (keyboard.leftCtrlKey.isPressed || keyboard.cKey.isPressed)
+            {
+                move.y -= 1f;
+            }
+
+            if (move.sqrMagnitude > 1f)
+            {
+                move.Normalize();
+            }
+
+            _controller.Move(move * speed * Time.deltaTime);
+        }
+
+        private static Vector2 ReadHorizontalInput(Keyboard keyboard)
+        {
+            var input = Vector2.zero;
+            if (keyboard.wKey.isPressed)
+            {
+                input.y += 1f;
+            }
+
+            if (keyboard.sKey.isPressed)
+            {
+                input.y -= 1f;
+            }
+
+            if (keyboard.aKey.isPressed)
+            {
+                input.x -= 1f;
+            }
+
+            if (keyboard.dKey.isPressed)
+            {
+                input.x += 1f;
+            }
+
+            if (input.sqrMagnitude > 1f)
+            {
+                input.Normalize();
+            }
+
+            return input;
+        }
+
+        private void GetHorizontalBasis(out Vector3 forward, out Vector3 right)
+        {
+            forward = transform.forward;
+            forward.y = 0f;
+            forward.Normalize();
+            right = transform.right;
+            right.y = 0f;
+            right.Normalize();
         }
 
         private void ApplyGravityOnly()

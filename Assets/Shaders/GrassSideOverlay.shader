@@ -3,7 +3,7 @@ Shader "MineCraft/GrassSideOverlay"
     Properties
     {
         _OverlayMap ("Side Overlay Mask", 2D) = "white" {}
-        _GrassTint ("Grass Tint", Color) = (0.57, 0.74, 0.35, 1)
+        _GrassTint ("Grass Tint", Color) = (1, 1, 1, 1)
     }
 
     SubShader
@@ -23,18 +23,23 @@ Shader "MineCraft/GrassSideOverlay"
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
 
             struct Attributes
             {
                 float4 positionOS : POSITION;
                 float2 uv : TEXCOORD0;
+                float4 color : COLOR;
             };
 
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
+                half4 color : COLOR;
+                half fogFactor : TEXCOORD1;
             };
 
             TEXTURE2D(_OverlayMap);
@@ -44,20 +49,27 @@ Shader "MineCraft/GrassSideOverlay"
                 half4 _GrassTint;
             CBUFFER_END
 
+            float _MineCraftSkyLight;
+
             Varyings vert(Attributes input)
             {
                 Varyings output;
-                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
+                output.positionCS = vertexInput.positionCS;
                 output.uv = TRANSFORM_TEX(input.uv, _OverlayMap);
+                output.color = input.color;
+                output.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
-                // Same tint formula as BlockUnlit top: grayscale texture × biome color (tintindex 0).
                 half4 overlayTex = SAMPLE_TEXTURE2D(_OverlayMap, sampler_OverlayMap, input.uv);
                 clip(overlayTex.r - 0.001h);
-                return half4(overlayTex.rgb * _GrassTint.rgb, 1);
+                half4 color = half4(overlayTex.rgb * _GrassTint.rgb * input.color.rgb, 1);
+                color.rgb *= _MineCraftSkyLight;
+                color.rgb = MixFog(color.rgb, input.fogFactor);
+                return color;
             }
             ENDHLSL
         }

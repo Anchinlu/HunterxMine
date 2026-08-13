@@ -1,3 +1,4 @@
+using System.Collections;
 using MineCraftUnity.Core;
 using MineCraftUnity.Rendering;
 using MineCraftUnity.UI;
@@ -16,6 +17,16 @@ namespace MineCraftUnity.Bootstrap
 
         private void Awake()
         {
+            RemoveLegacyGround();
+        }
+
+        private void Start()
+        {
+            StartCoroutine(BootSequence());
+        }
+
+        private IEnumerator BootSequence()
+        {
             var manager = FindFirstObjectByType<ChunkManager>();
             if (manager == null)
             {
@@ -24,26 +35,37 @@ namespace MineCraftUnity.Bootstrap
             }
 
             manager.Configure(worldSeed, viewDistance);
+            DayNightController.EnsureOnWorld(manager.gameObject, 1000);
+            EnsureStatsOverlay(manager.gameObject);
+            EnsurePerformanceBaseline(manager.gameObject);
 
             var player = GameObject.Find("Player");
             if (player != null)
             {
                 manager.SetFollowTarget(player.transform);
+                while (!manager.IsSpawnAreaReady)
+                {
+                    yield return null;
+                }
+
                 RepositionPlayerOnSurface(manager, player.transform);
             }
-
-            RemoveLegacyGround();
-            EnsureStatsOverlay(manager.gameObject);
         }
 
         private static void EnsureStatsOverlay(GameObject worldRoot)
         {
-            if (worldRoot.GetComponent<GameStatsOverlay>() != null)
+            if (worldRoot.GetComponent<GameStatsOverlay>() == null)
             {
-                return;
+                worldRoot.AddComponent<GameStatsOverlay>();
             }
+        }
 
-            worldRoot.AddComponent<GameStatsOverlay>();
+        private static void EnsurePerformanceBaseline(GameObject worldRoot)
+        {
+            if (worldRoot.GetComponent<PerformanceBaselineRecorder>() == null)
+            {
+                worldRoot.AddComponent<PerformanceBaselineRecorder>();
+            }
         }
 
         private static void RepositionPlayerOnSurface(ChunkManager manager, Transform player)

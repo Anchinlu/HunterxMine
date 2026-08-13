@@ -18,5 +18,6 @@ namespace MineCraftUnity.WorldGen.Density
         public int BlockX;
         public int BlockY;
         public int BlockZ;
+        public DensityEvaluationCache Cache;
     }
 }
