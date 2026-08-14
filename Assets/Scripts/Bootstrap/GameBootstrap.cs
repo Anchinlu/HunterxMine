@@ -18,6 +18,12 @@ namespace MineCraftUnity.Bootstrap
         private void Awake()
         {
             RemoveLegacyGround();
+
+            var manager = FindFirstObjectByType<ChunkManager>();
+            if (manager != null)
+            {
+                DayNightController.EnsureOnWorld(manager.gameObject, 6000);
+            }
         }
 
         private void Start()
@@ -35,8 +41,9 @@ namespace MineCraftUnity.Bootstrap
             }
 
             manager.Configure(worldSeed, viewDistance);
-            DayNightController.EnsureOnWorld(manager.gameObject, 1000);
+            DayNightController.EnsureOnWorld(manager.gameObject, 6000);
             EnsureStatsOverlay(manager.gameObject);
+            EnsureChatOverlay(manager.gameObject);
             EnsurePerformanceBaseline(manager.gameObject);
 
             var player = GameObject.Find("Player");
@@ -57,6 +64,14 @@ namespace MineCraftUnity.Bootstrap
             if (worldRoot.GetComponent<GameStatsOverlay>() == null)
             {
                 worldRoot.AddComponent<GameStatsOverlay>();
+            }
+        }
+
+        private static void EnsureChatOverlay(GameObject worldRoot)
+        {
+            if (worldRoot.GetComponent<ChatCommandOverlay>() == null)
+            {
+                worldRoot.AddComponent<ChatCommandOverlay>();
             }
         }
 

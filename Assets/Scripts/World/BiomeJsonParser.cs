@@ -26,6 +26,14 @@ namespace MineCraftUnity.World
             "\"minecraft:visual/water_fog_color\"\\s*:\\s*\"(?<hex>#[0-9a-fA-F]{6})\"",
             RegexOptions.Compiled);
 
+        private static readonly Regex SkyColorRegex = new(
+            "\"minecraft:visual/sky_color\"\\s*:\\s*\"(?<hex>#[0-9a-fA-F]{6})\"",
+            RegexOptions.Compiled);
+
+        private static readonly Regex HasPrecipitationRegex = new(
+            "\"has_precipitation\"\\s*:\\s*(?<value>true|false)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         public static BiomeDefinition Parse(BiomeId id, string json)
         {
             var definition = new BiomeDefinition { Id = id, WaterColor = BiomeJsonParser.ParseHexColor("#3f76e4") };
@@ -67,6 +75,23 @@ namespace MineCraftUnity.World
             if (fogMatch.Success)
             {
                 definition = Clone(definition, waterFogColor: ParseHexColor(fogMatch.Groups["hex"].Value));
+            }
+
+            var skyMatch = SkyColorRegex.Match(json);
+            if (skyMatch.Success)
+            {
+                definition = Clone(definition, skyColor: ParseHexColor(skyMatch.Groups["hex"].Value));
+            }
+
+            var precipitationMatch = HasPrecipitationRegex.Match(json);
+            if (precipitationMatch.Success)
+            {
+                definition = Clone(
+                    definition,
+                    hasPrecipitation: string.Equals(
+                        precipitationMatch.Groups["value"].Value,
+                        "true",
+                        StringComparison.OrdinalIgnoreCase));
             }
 
             return definition;
@@ -132,7 +157,9 @@ namespace MineCraftUnity.World
             Color? grassColor = null,
             Color? foliageColor = null,
             string grassColorModifier = null,
-            Color? waterFogColor = null)
+            Color? waterFogColor = null,
+            Color? skyColor = null,
+            bool? hasPrecipitation = null)
         {
             return new BiomeDefinition
             {
@@ -143,7 +170,9 @@ namespace MineCraftUnity.World
                 GrassColor = grassColor ?? source.GrassColor,
                 FoliageColor = foliageColor ?? source.FoliageColor,
                 GrassColorModifier = grassColorModifier ?? source.GrassColorModifier,
-                WaterFogColor = waterFogColor ?? source.WaterFogColor
+                WaterFogColor = waterFogColor ?? source.WaterFogColor,
+                SkyColor = skyColor ?? source.SkyColor,
+                HasPrecipitation = hasPrecipitation ?? source.HasPrecipitation
             };
         }
     }

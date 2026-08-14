@@ -33,6 +33,7 @@ namespace MineCraftUnity.WorldGen
                     }
                 }
 
+                VegetationPlacer.DecorateChunk(chunk, randomState);
                 chunk.FinishBulkFill();
                 chunk.MarkGenerated();
             }

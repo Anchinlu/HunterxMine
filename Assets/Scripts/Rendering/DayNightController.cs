@@ -1,6 +1,11 @@
+using MineCraftUnity.Player;
+using MineCraftUnity.Rendering;
 using MineCraftUnity.World;
 using UnityEngine;
 using UnityEngine.Rendering;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace MineCraftUnity.Rendering
 {
@@ -14,18 +19,67 @@ namespace MineCraftUnity.Rendering
 
         public static readonly int SkyLightGlobalId = Shader.PropertyToID("_MineCraftSkyLight");
 
-        [SerializeField] private long startDayTime = 1000;
+#if UNITY_EDITOR
+        [InitializeOnLoadMethod]
+#endif
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void BootstrapSkyLightGlobal()
+        {
+            Shader.SetGlobalFloat(SkyLightGlobalId, 1f);
+        }
+
+        public static void EnsureDefaultSkyLight()
+        {
+            if (Instance == null)
+            {
+                Shader.SetGlobalFloat(SkyLightGlobalId, 1f);
+            }
+        }
+
+        [SerializeField] private long startDayTime = 6000;
         [SerializeField] private float timeScale = 1f;
         [SerializeField] private bool advanceTime = true;
+        [SerializeField] private float weatherTransitionSpeed = 0.015f;
         [SerializeField] private Light sunLight;
         [SerializeField] private Material skyboxMaterial;
 
         private WorldTime _worldTime;
         private OverworldSkyVisuals.Snapshot _currentSnapshot;
         private bool _initialized;
+        private float _rainLevel;
+        private float _targetRainLevel;
+        private bool _thundering;
 
         public WorldTime WorldTime => _worldTime;
+        public float RainLevel => _rainLevel;
+        public bool IsThundering => _thundering && _rainLevel > 0.25f;
         public OverworldSkyVisuals.Snapshot CurrentSnapshot => _currentSnapshot;
+
+        public OverworldSkyVisuals.Snapshot BuildSnapshot()
+        {
+            return OverworldSkyVisuals.Evaluate(
+                _worldTime.DayFraction,
+                _worldTime.DayTime,
+                _rainLevel,
+                IsThundering ? 1f : 0f,
+                SamplePlayerBiome());
+        }
+
+        private static BiomeId SamplePlayerBiome()
+        {
+            var player = FindFirstObjectByType<PlayerController>();
+            var chunkManager = FindFirstObjectByType<ChunkManager>();
+            if (player == null || chunkManager == null)
+            {
+                return BiomeId.Unknown;
+            }
+
+            var position = player.transform.position;
+            var worldX = Mathf.FloorToInt(position.x);
+            var worldY = Mathf.FloorToInt(position.y);
+            var worldZ = Mathf.FloorToInt(position.z);
+            return chunkManager.Level.GetBiome(worldX, worldY, worldZ);
+        }
 
         private void Awake()
         {
@@ -45,6 +99,7 @@ namespace MineCraftUnity.Rendering
             if (Instance == this)
             {
                 Instance = null;
+                Shader.SetGlobalFloat(SkyLightGlobalId, 1f);
             }
         }
 
@@ -60,13 +115,54 @@ namespace MineCraftUnity.Rendering
                 _worldTime.Advance(Time.deltaTime, timeScale);
             }
 
-            ApplyVisuals(OverworldSkyVisuals.Evaluate(_worldTime.DayFraction));
+            UpdateWeather();
+            ApplyVisuals(BuildSnapshot());
+        }
+
+        private void UpdateWeather()
+        {
+            _rainLevel = Mathf.MoveTowards(_rainLevel, _targetRainLevel, weatherTransitionSpeed);
+            if (!_thundering && _targetRainLevel <= 0f && _rainLevel <= 0.001f)
+            {
+                _rainLevel = 0f;
+            }
+        }
+
+        public void SetWeatherClear()
+        {
+            _targetRainLevel = 0f;
+            _thundering = false;
+            ApplyVisuals(BuildSnapshot());
+            GetComponent<CelestialRenderer>()?.RefreshNow();
+        }
+
+        public void SetWeatherRain()
+        {
+            _targetRainLevel = 1f;
+            _thundering = false;
+            ApplyVisuals(BuildSnapshot());
+            GetComponent<CelestialRenderer>()?.RefreshNow();
+        }
+
+        public void SetWeatherThunder()
+        {
+            _targetRainLevel = 1f;
+            _thundering = true;
+            ApplyVisuals(BuildSnapshot());
+            GetComponent<CelestialRenderer>()?.RefreshNow();
+        }
+
+        private void LateUpdate()
+        {
+            ConfigureMainCamera();
         }
 
         public void SetDayTime(long dayTime)
         {
             _worldTime.SetDayTime(dayTime);
-            ApplyVisuals(OverworldSkyVisuals.Evaluate(_worldTime.DayFraction));
+            ApplyVisuals(BuildSnapshot());
+
+            GetComponent<CelestialRenderer>()?.RefreshNow();
         }
 
         public void CopyCurrentOverworldVisuals(
@@ -91,7 +187,7 @@ namespace MineCraftUnity.Rendering
             ambientGround = _currentSnapshot.AmbientGround;
         }
 
-        public static DayNightController EnsureOnWorld(GameObject worldRoot, long dayTime = 1000)
+        public static DayNightController EnsureOnWorld(GameObject worldRoot, long dayTime = 6000)
         {
             var controller = worldRoot.GetComponent<DayNightController>();
             if (controller == null)
@@ -100,8 +196,15 @@ namespace MineCraftUnity.Rendering
             }
 
             controller.startDayTime = dayTime;
-            controller._worldTime ??= new WorldTime(dayTime);
-            controller._worldTime.SetDayTime(dayTime);
+            if (controller._worldTime == null)
+            {
+                controller._worldTime = new WorldTime(dayTime);
+            }
+            else
+            {
+                controller._worldTime.SetDayTime(dayTime);
+            }
+
             controller.EnsureSceneReferences();
             return controller;
         }
@@ -129,8 +232,10 @@ namespace MineCraftUnity.Rendering
             }
 
             ConfigureMainCamera();
-            ApplyVisuals(OverworldSkyVisuals.Evaluate(_worldTime.DayFraction));
+            ApplyVisuals(BuildSnapshot());
             _initialized = sunLight != null && skyboxMaterial != null;
+
+            CelestialRenderer.EnsureOnDayNightController(this);
         }
 
         private void ApplyVisuals(OverworldSkyVisuals.Snapshot snapshot)
@@ -139,15 +244,10 @@ namespace MineCraftUnity.Rendering
 
             if (skyboxMaterial != null)
             {
-                skyboxMaterial.SetColor("_SkyTop", snapshot.SkyTop);
-                skyboxMaterial.SetColor("_SkyHorizon", snapshot.SkyHorizon);
-                skyboxMaterial.SetVector("_SunDirection", snapshot.SunDirection);
-                skyboxMaterial.SetColor("_SunColor", snapshot.SunDiscColor);
-                skyboxMaterial.SetFloat("_SunSize", snapshot.SunDiscSize);
-                skyboxMaterial.SetVector("_MoonDirection", snapshot.MoonDirection);
-                skyboxMaterial.SetColor("_MoonColor", snapshot.MoonDiscColor);
-                skyboxMaterial.SetFloat("_MoonSize", snapshot.MoonDiscSize);
+                skyboxMaterial.SetColor("_SkyColor", snapshot.SkyTop);
+                skyboxMaterial.SetColor("_FogHorizonColor", snapshot.SkyHorizon);
                 skyboxMaterial.SetFloat("_StarBrightness", snapshot.StarBrightness);
+                skyboxMaterial.SetFloat("_StarAngle", snapshot.StarAngleRadians);
             }
 
             RenderSettings.fog = true;

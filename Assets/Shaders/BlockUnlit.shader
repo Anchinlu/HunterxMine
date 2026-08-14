@@ -24,6 +24,7 @@ Shader "MineCraft/BlockUnlit"
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
+            #include "MineCraftLighting.hlsl"
 
             struct Attributes
             {
@@ -47,15 +48,13 @@ Shader "MineCraft/BlockUnlit"
                 half4 _BaseColor;
             CBUFFER_END
 
-            float _MineCraftSkyLight;
-
             Varyings vert(Attributes input)
             {
                 Varyings output;
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
                 output.positionCS = vertexInput.positionCS;
                 output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
-                output.color = input.color;
+                output.color = MineCraftResolveVertexColor(input.color);
                 output.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
                 return output;
             }
@@ -63,7 +62,7 @@ Shader "MineCraft/BlockUnlit"
             half4 frag(Varyings input) : SV_Target
             {
                 half4 color = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor * input.color;
-                color.rgb *= _MineCraftSkyLight;
+                color.rgb *= MineCraftResolveSkyLight();
                 color.rgb = MixFog(color.rgb, input.fogFactor);
                 return color;
             }

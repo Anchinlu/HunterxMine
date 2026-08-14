@@ -13,7 +13,7 @@ namespace MineCraftUnity.WorldGen
             BiomeId.DeepColdOcean,
             BiomeId.DeepOcean,
             BiomeId.DeepLukewarmOcean,
-            BiomeId.WarmOcean
+            BiomeId.DeepWarmOcean
         };
 
         private static readonly BiomeId[] Oceans =
@@ -121,8 +121,19 @@ namespace MineCraftUnity.WorldGen
                 return ResolveCoastBiome(temperatureIndex, humidityIndex, continental, erosion, weirdPositive);
             }
 
-            return ResolveInlandBiome(temperatureIndex, humidityIndex, continental, erosion, weirdPositive);
+            return ResolveInlandBiome(temperatureIndex, humidityIndex, continental, erosion, weirdness, weirdPositive);
         }
+
+        /// <summary>MC ref: TerrainProvider.PeaksAndValleys — river valleys sit on the high weirdness slice.</summary>
+        private static bool IsRiverValley(float weirdness) =>
+            System.Math.Abs(System.Math.Abs(weirdness) - 0.6666667f) < 0.12f;
+
+        private static bool ShouldPickRiver(float continental, float erosion, float weirdness) =>
+            continental >= -0.11f
+            && continental < 0.03f
+            && erosion > -0.78f
+            && erosion <= -0.375f
+            && IsRiverValley(weirdness);
 
         private static BiomeId ResolveCoastBiome(
             int temperatureIndex,
@@ -162,8 +173,14 @@ namespace MineCraftUnity.WorldGen
             int humidityIndex,
             float continental,
             float erosion,
+            float weirdness,
             bool weirdPositive)
         {
+            if (ShouldPickRiver(continental, erosion, weirdness))
+            {
+                return BiomeId.River;
+            }
+
             if (erosion < -0.78f)
             {
                 return PickPeakBiome(temperatureIndex, humidityIndex, weirdPositive);

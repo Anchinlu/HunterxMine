@@ -2,15 +2,10 @@ Shader "MineCraft/OverworldSkybox"
 {
     Properties
     {
-        _SkyTop ("Sky Top", Color) = (0.47, 0.65, 1, 1)
-        _SkyHorizon ("Sky Horizon", Color) = (0.72, 0.85, 1, 1)
-        _SunDirection ("Sun Direction", Vector) = (0, 1, 0, 0)
-        _SunColor ("Sun Color", Color) = (1, 1, 1, 1)
-        _SunSize ("Sun Size", Float) = 0.018
-        _MoonDirection ("Moon Direction", Vector) = (0, -1, 0, 0)
-        _MoonColor ("Moon Color", Color) = (0.9, 0.9, 0.95, 1)
-        _MoonSize ("Moon Size", Float) = 0.014
+        _SkyColor ("Sky Color", Color) = (0.47, 0.65, 1, 1)
+        _FogHorizonColor ("Fog Horizon Color", Color) = (0.75, 0.85, 1, 1)
         _StarBrightness ("Star Brightness", Range(0, 1)) = 0
+        _StarAngle ("Star Angle Rad", Float) = 0
     }
 
     SubShader
@@ -45,15 +40,10 @@ Shader "MineCraft/OverworldSkybox"
             };
 
             CBUFFER_START(UnityPerMaterial)
-                half4 _SkyTop;
-                half4 _SkyHorizon;
-                half4 _SunDirection;
-                half4 _SunColor;
-                half4 _MoonDirection;
-                half4 _MoonColor;
-                half _SunSize;
-                half _MoonSize;
+                half4 _SkyColor;
+                half4 _FogHorizonColor;
                 half _StarBrightness;
+                half _StarAngle;
             CBUFFER_END
 
             Varyings vert(Attributes input)
@@ -70,34 +60,33 @@ Shader "MineCraft/OverworldSkybox"
                 return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
             }
 
-            half4 SampleCelestial(half3 dir, half3 bodyDir, half bodySize, half4 bodyColor)
+            float2 RotateXZ(float2 xz, half angle)
             {
-                half cosAngle = dot(dir, normalize(bodyDir));
-                half edge = 1.0h - bodySize;
-                half disc = smoothstep(edge, 1.0h, cosAngle);
-                return half4(bodyColor.rgb, bodyColor.a * disc);
+                half s = sin(angle);
+                half c = cos(angle);
+                return float2(c * xz.x - s * xz.y, s * xz.x + c * xz.y);
             }
 
             half4 frag(Varyings input) : SV_Target
             {
                 half3 dir = normalize(input.direction);
-                half t = saturate(dir.y * 0.5h + 0.5h);
-                half3 sky = lerp(_SkyHorizon.rgb, _SkyTop.rgb, t);
 
-                half4 sun = SampleCelestial(dir, _SunDirection.xyz, _SunSize, _SunColor);
-                half4 moon = SampleCelestial(dir, _MoonDirection.xyz, _MoonSize, _MoonColor);
-                sky = lerp(sky, sun.rgb, sun.a);
+                // MC ref: flat sky disc color; horizon tint from fog (AtmosphericFogEnvironment sky mix).
+                half elevation = saturate(dir.y);
+                half horizonMix = 1.0h - pow(saturate(elevation * 1.35h), 0.25h);
+                half3 sky = lerp(_SkyColor.rgb, _FogHorizonColor.rgb, horizonMix * 0.85h);
 
-                if (_StarBrightness > 0.001h && dir.y > 0.02h)
+                if (_StarBrightness > 0.001h && dir.y > 0.08h)
                 {
-                    float2 uv = dir.xz / (dir.y + 0.15);
-                    float2 cell = floor(uv * 120.0);
-                    half star = step(0.992h, Hash21(cell));
+                    float2 starDir = RotateXZ(dir.xz / (dir.y + 0.22), _StarAngle);
+                    // MC ref: ~1500 stars — sparse grid + high hash threshold.
+                    float2 cell = floor(starDir * 88.0);
+                    half star = step(0.997h, Hash21(cell));
                     half twinkle = 0.65h + 0.35h * sin(cell.x * 12.7 + cell.y * 4.1);
-                    sky += star * _StarBrightness * twinkle * dir.y;
+                    half elevationFade = dir.y * dir.y;
+                    sky += star * _StarBrightness * twinkle * elevationFade * 0.85h;
                 }
 
-                sky = lerp(sky, moon.rgb, moon.a);
                 return half4(sky, 1.0h);
             }
             ENDHLSL

@@ -15,5 +15,7 @@ namespace MineCraftUnity.World
         public Color? FoliageColor;
         public string GrassColorModifier;
         public Color? WaterFogColor;
+        public Color? SkyColor;
+        public bool HasPrecipitation = true;
     }
 }

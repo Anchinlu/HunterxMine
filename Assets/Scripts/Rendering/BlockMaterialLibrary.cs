@@ -28,6 +28,8 @@ namespace MineCraftUnity.Rendering
 
         public static void EnsureInitialized()
         {
+            DayNightController.EnsureDefaultSkyLight();
+
             if (_initialized)
             {
                 return;
@@ -44,6 +46,28 @@ namespace MineCraftUnity.Rendering
             _materials[(int)ChunkMeshLayer.GrassSide] = CreateCubeMaterial("grass_block/Textures/grass_block_side.png");
             _materials[(int)ChunkMeshLayer.GrassOverlay] = CreateOverlayMaterial("grass_block/Textures/grass_block_side_overlay.png", Color.white);
             _materials[(int)ChunkMeshLayer.Gravel] = CreateCubeMaterial("gravel/Textures/gravel.png");
+            _materials[(int)ChunkMeshLayer.ShortGrass] = CreateCutoutMaterial("short_grass/Textures/short_grass.png", Color.white);
+            _materials[(int)ChunkMeshLayer.Fern] = CreateCutoutMaterial("fern/Textures/fern.png", Color.white);
+            _materials[(int)ChunkMeshLayer.Dandelion] = CreateCutoutMaterial("dandelion/Textures/dandelion.png", Color.white);
+            _materials[(int)ChunkMeshLayer.Poppy] = CreateCutoutMaterial("poppy/Textures/poppy.png", Color.white);
+            _materials[(int)ChunkMeshLayer.OakLeaves] = CreateCutoutMaterial("oak_leaves/Textures/oak_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.BirchLeaves] = CreateCutoutMaterial("birch_leaves/Textures/birch_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.SpruceLeaves] = CreateCutoutMaterial("spruce_leaves/Textures/spruce_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.OakLog] = CreateCubeMaterial("oak_log/Textures/oak_log.png");
+            _materials[(int)ChunkMeshLayer.BirchLog] = CreateCubeMaterial("birch_log/Textures/birch_log.png");
+            _materials[(int)ChunkMeshLayer.SpruceLog] = CreateCubeMaterial("spruce_log/Textures/spruce_log.png");
+            _materials[(int)ChunkMeshLayer.JungleLog] = CreateCubeMaterial("jungle_log/Textures/jungle_log.png");
+            _materials[(int)ChunkMeshLayer.AcaciaLog] = CreateCubeMaterial("acacia_log/Textures/acacia_log.png");
+            _materials[(int)ChunkMeshLayer.DarkOakLog] = CreateCubeMaterial("dark_oak_log/Textures/dark_oak_log.png");
+            _materials[(int)ChunkMeshLayer.CherryLog] = CreateCubeMaterial("cherry_log/Textures/cherry_log.png");
+            _materials[(int)ChunkMeshLayer.MangroveLog] = CreateCubeMaterial("mangrove_log/Textures/mangrove_log.png");
+            _materials[(int)ChunkMeshLayer.PaleOakLog] = CreateCubeMaterial("pale_oak_log/Textures/pale_oak_log.png");
+            _materials[(int)ChunkMeshLayer.JungleLeaves] = CreateCutoutMaterial("jungle_leaves/Textures/jungle_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.AcaciaLeaves] = CreateCutoutMaterial("acacia_leaves/Textures/acacia_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.DarkOakLeaves] = CreateCutoutMaterial("dark_oak_leaves/Textures/dark_oak_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.CherryLeaves] = CreateCutoutMaterial("cherry_leaves/Textures/cherry_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.MangroveLeaves] = CreateCutoutMaterial("mangrove_leaves/Textures/mangrove_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.PaleOakLeaves] = CreateCutoutMaterial("pale_oak_leaves/Textures/pale_oak_leaves.png", Color.white);
             _initialized = true;
         }
 
@@ -128,6 +152,22 @@ namespace MineCraftUnity.Rendering
                 SetColor(mat, grassTint);
             }
 
+            return mat;
+        }
+
+        private static Material CreateCutoutMaterial(string relativePath, Color tint)
+        {
+            var texture = LoadTexture(relativePath);
+            var shader = Shader.Find("MineCraft/BlockCutout") ?? Shader.Find("Universal Render Pipeline/Unlit");
+            var mat = new Material(shader) { name = $"Mat_{System.IO.Path.GetFileNameWithoutExtension(relativePath)}" };
+            SetTexture(mat, texture);
+            SetColor(mat, tint);
+            if (mat.HasProperty("_Cutoff"))
+            {
+                mat.SetFloat("_Cutoff", 0.5f);
+            }
+
+            mat.renderQueue = 2450;
             return mat;
         }
 

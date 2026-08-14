@@ -1,4 +1,5 @@
 using MineCraftUnity.Blocks;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MineCraftUnity.World
@@ -8,8 +9,11 @@ namespace MineCraftUnity.World
     /// </summary>
     public static class BiomeRegistry
     {
+        private static readonly Color DefaultGrassColor = BiomeJsonParser.ParseHexColor("#79c05a");
         private static readonly Color DefaultWaterColor = BiomeJsonParser.ParseHexColor("#3f76e4");
-        private static readonly Color DefaultGrassColor = BiomeJsonParser.ParseHexColor("#91bd59");
+        
+        private static readonly Dictionary<BiomeId, Color> _grassCache = new();
+        private static readonly Dictionary<BiomeId, Color> _foliageCache = new();
 
         public static void EnsureLoaded() => BiomeDatapackLoader.EnsureLoaded();
 
@@ -70,27 +74,122 @@ namespace MineCraftUnity.World
                 _ => "Unknown"
             };
 
-        /// <summary>MC grass tint from JSON grass_color, modifier, or temperature colormap.</summary>
-        public static Color GetGrassTint(BiomeId id)
+        /// <summary>MC ref: biome attributes minecraft:visual/sky_color, else dimension overworld default.</summary>
+        public static Color GetSkyColor(BiomeId id)
+        {
+            EnsureLoaded();
+            if (BiomeDatapackLoader.TryGetDefinition(id, out var def) && def.SkyColor.HasValue)
+            {
+                return def.SkyColor.Value;
+            }
+
+            return OverworldDayTimeline.DefaultSkyColor;
+        }
+
+        public static bool HasPrecipitation(BiomeId id)
         {
             EnsureLoaded();
             if (BiomeDatapackLoader.TryGetDefinition(id, out var def))
             {
-                if (def.GrassColor.HasValue)
-                {
-                    return def.GrassColor.Value;
-                }
-
-                if (!string.IsNullOrEmpty(def.GrassColorModifier))
-                {
-                    return GetModifiedGrassColor(def.GrassColorModifier, def);
-                }
-
-                return ComputeGrassColorFromClimate(def.Temperature, def.Downfall);
+                return def.HasPrecipitation;
             }
 
-            return DefaultGrassColor;
+            return id is not (BiomeId.Desert or BiomeId.Badlands or BiomeId.ErodedBadlands or BiomeId.WoodedBadlands);
         }
+
+        /// <summary>MC grass tint from JSON grass_color, modifier, or temperature colormap.</summary>
+        public static Color GetGrassTint(BiomeId id)
+        {
+            if (_grassCache.TryGetValue(id, out var cached))
+                return cached;
+
+            EnsureLoaded();
+            Color result = DefaultGrassColor;
+
+            if (BiomeDatapackLoader.TryGetDefinition(id, out var def))
+            {
+                if (def.GrassColor.HasValue)
+                {
+                    result = def.GrassColor.Value;
+                }
+                else if (!string.IsNullOrEmpty(def.GrassColorModifier))
+                {
+                    result = GetModifiedGrassColor(def.GrassColorModifier, def);
+                }
+                else
+                {
+                    result = ComputeGrassColorFromClimate(def.Temperature, def.Downfall);
+                }
+            }
+
+            _grassCache[id] = result;
+            return result;
+        }
+
+        /// <summary>MC foliage tint from JSON foliage_color or temperature colormap.</summary>
+        public static Color GetFoliageTint(BiomeId id)
+        {
+            if (_foliageCache.TryGetValue(id, out var cached))
+                return cached;
+
+            EnsureLoaded();
+            Color result = BiomeJsonParser.ParseHexColor("#77ab2f");
+
+            if (BiomeDatapackLoader.TryGetDefinition(id, out var def))
+            {
+                if (def.FoliageColor.HasValue)
+                {
+                    result = def.FoliageColor.Value;
+                }
+                else
+                {
+                    result = ComputeFoliageColorFromClimate(def.Temperature, def.Downfall);
+                }
+            }
+
+            _foliageCache[id] = result;
+            return result;
+        }
+
+        public static bool SupportsSurfaceVegetation(BiomeId id) =>
+            id is not (
+                BiomeId.Desert or BiomeId.Badlands or BiomeId.ErodedBadlands or BiomeId.WoodedBadlands
+                or BiomeId.Ocean or BiomeId.DeepOcean or BiomeId.ColdOcean or BiomeId.FrozenOcean
+                or BiomeId.LukewarmOcean or BiomeId.WarmOcean or BiomeId.DeepColdOcean
+                or BiomeId.DeepFrozenOcean or BiomeId.DeepLukewarmOcean or BiomeId.DeepWarmOcean
+                or BiomeId.Beach or BiomeId.SnowyBeach or BiomeId.StonyShore
+                or BiomeId.SnowyPlains or BiomeId.IceSpikes);
+
+        public static bool PrefersFern(BiomeId id) =>
+            id is BiomeId.Swamp or BiomeId.MangroveSwamp;
+
+        public static BlockId GetLeavesBlock(BiomeId id) => id switch
+        {
+            BiomeId.BirchForest or BiomeId.OldGrowthBirchForest => BlockId.BirchLeaves,
+            BiomeId.Taiga or BiomeId.OldGrowthSpruceTaiga or BiomeId.OldGrowthPineTaiga
+                or BiomeId.SnowyTaiga or BiomeId.Grove => BlockId.SpruceLeaves,
+            BiomeId.DarkForest => BlockId.DarkOakLeaves,
+            BiomeId.Jungle or BiomeId.SparseJungle or BiomeId.BambooJungle => BlockId.JungleLeaves,
+            BiomeId.Savanna or BiomeId.SavannaPlateau or BiomeId.WindsweptSavanna => BlockId.AcaciaLeaves,
+            BiomeId.CherryGrove => BlockId.CherryLeaves,
+            BiomeId.MangroveSwamp => BlockId.MangroveLeaves,
+            BiomeId.PaleGarden => BlockId.PaleOakLeaves,
+            _ => BlockId.OakLeaves
+        };
+
+        public static BlockId GetLogBlock(BiomeId id) => id switch
+        {
+            BiomeId.BirchForest or BiomeId.OldGrowthBirchForest => BlockId.BirchLog,
+            BiomeId.Taiga or BiomeId.OldGrowthSpruceTaiga or BiomeId.OldGrowthPineTaiga
+                or BiomeId.SnowyTaiga or BiomeId.Grove => BlockId.SpruceLog,
+            BiomeId.DarkForest => BlockId.DarkOakLog,
+            BiomeId.Jungle or BiomeId.SparseJungle or BiomeId.BambooJungle => BlockId.JungleLog,
+            BiomeId.Savanna or BiomeId.SavannaPlateau or BiomeId.WindsweptSavanna => BlockId.AcaciaLog,
+            BiomeId.CherryGrove => BlockId.CherryLog,
+            BiomeId.MangroveSwamp => BlockId.MangroveLog,
+            BiomeId.PaleGarden => BlockId.PaleOakLog,
+            _ => BlockId.OakLog
+        };
 
         /// <summary>MC effects.water_color RGB (fog / future use — water mesh uses material tint).</summary>
         public static Color GetWaterColor(BiomeId id)
@@ -192,13 +291,12 @@ namespace MineCraftUnity.World
         /// <summary>Simplified MC grass colormap from temperature + downfall.</summary>
         private static Color ComputeGrassColorFromClimate(float temperature, float downfall)
         {
-            var temp = Mathf.Clamp01((temperature + 1f) * 0.5f);
-            var rain = Mathf.Clamp01(downfall);
-            var baseColor = Color.Lerp(
-                BiomeJsonParser.ParseHexColor("#8eb971"),
-                BiomeJsonParser.ParseHexColor("#bfba40"),
-                temp);
-            return Color.Lerp(baseColor, BiomeJsonParser.ParseHexColor("#bfb755"), 1f - rain);
+            return BiomeColorMap.GetGrassColor(temperature, downfall);
+        }
+
+        private static Color ComputeFoliageColorFromClimate(float temperature, float downfall)
+        {
+            return BiomeColorMap.GetFoliageColor(temperature, downfall);
         }
     }
 }

@@ -10,6 +10,9 @@ namespace MineCraftUnity.World
 
         public long DayTime { get; private set; }
 
+        /// <summary>Fractional progress toward the next whole tick (for debug display).</summary>
+        public float TickRemainder { get; private set; }
+
         public float DayFraction
         {
             get
@@ -24,12 +27,19 @@ namespace MineCraftUnity.World
             }
         }
 
+        /// <summary>MC ref: lunar phase cycles every 8 overworld days.</summary>
+        public MoonPhase MoonPhase => MoonPhaseExtensions.FromDayTime(DayTime);
+
         public WorldTime(long startDayTime = 1000)
         {
             DayTime = startDayTime;
         }
 
-        public void SetDayTime(long dayTime) => DayTime = dayTime;
+        public void SetDayTime(long dayTime)
+        {
+            DayTime = dayTime;
+            TickRemainder = 0f;
+        }
 
         public void Advance(float deltaSeconds, float timeScale = 1f)
         {
@@ -38,11 +48,19 @@ namespace MineCraftUnity.World
                 return;
             }
 
-            DayTime += (long)(deltaSeconds * TicksPerSecond * timeScale);
+            TickRemainder += deltaSeconds * TicksPerSecond * timeScale;
+            var wholeTicks = (long)TickRemainder;
+            if (wholeTicks == 0)
+            {
+                return;
+            }
+
+            DayTime += wholeTicks;
+            TickRemainder -= wholeTicks;
         }
 
-        /// <summary>MC clock: tick 0 = 06:00, 6000 = 12:00, 12000 = 18:00, 18000 = 00:00.</summary>
-        public static string FormatClock(long dayTime)
+        /// <summary>Tick within the current MC day (0–23999).</summary>
+        public static long NormalizeDayTick(long dayTime)
         {
             var tick = dayTime % TicksPerDay;
             if (tick < 0)
@@ -50,10 +68,31 @@ namespace MineCraftUnity.World
                 tick += TicksPerDay;
             }
 
+            return tick;
+        }
+
+        /// <summary>MC clock: tick 0 = 06:00, 6000 = 12:00, 12000 = 18:00, 18000 = 00:00.</summary>
+        public static string FormatClock(long dayTime)
+        {
+            var tick = NormalizeDayTick(dayTime);
             var totalMinutes = (tick * 24 * 60) / TicksPerDay;
             var hours = (totalMinutes / 60 + 6) % 24;
             var minutes = totalMinutes % 60;
             return $"{hours:00}:{minutes:00}";
+        }
+
+        /// <summary>F3 overlay: wall clock + live day tick (20 ticks ≈ 1 real second at 1×).</summary>
+        public string FormatDebugTime()
+        {
+            var tick = NormalizeDayTick(DayTime) + TickRemainder;
+            return $"{FormatClock(DayTime)}  tick {tick:00000.0} / {TicksPerDay}";
+        }
+
+        /// <summary>F3 overlay from raw dayTime (no sub-tick fraction).</summary>
+        public static string FormatDebugTime(long dayTime)
+        {
+            var tick = NormalizeDayTick(dayTime);
+            return $"{FormatClock(dayTime)}  tick {tick,5} / {TicksPerDay}";
         }
     }
 }

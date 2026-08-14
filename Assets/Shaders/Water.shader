@@ -30,6 +30,7 @@ Shader "MineCraft/Water"
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
+            #include "MineCraftLighting.hlsl"
 
             struct Attributes
             {
@@ -56,15 +57,13 @@ Shader "MineCraft/Water"
                 float _TickRate;
             CBUFFER_END
 
-            float _MineCraftSkyLight;
-
             Varyings vert(Attributes input)
             {
                 Varyings output;
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
                 output.positionCS = vertexInput.positionCS;
                 output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
-                output.color = input.color;
+                output.color = MineCraftResolveVertexColor(input.color);
                 output.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
                 return output;
             }
@@ -76,7 +75,7 @@ Shader "MineCraft/Water"
                 float2 atlasUv = float2(input.uv.x, (input.uv.y * invFrames) + frame * invFrames);
                 half4 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, atlasUv);
                 half4 color = tex * _BaseColor * input.color;
-                color.rgb *= _MineCraftSkyLight;
+                color.rgb *= MineCraftResolveSkyLight();
                 color.rgb = MixFog(color.rgb, input.fogFactor);
                 return color;
             }

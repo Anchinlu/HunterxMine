@@ -4,6 +4,8 @@ namespace MineCraftUnity.Blocks
     {
         None = 0,
         Cube = 1,
-        GrassBlock = 2
+        GrassBlock = 2,
+        Cross = 3,
+        CutoutCube = 4
     }
 }

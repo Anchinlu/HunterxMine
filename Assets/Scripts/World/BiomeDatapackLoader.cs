@@ -102,7 +102,6 @@ namespace MineCraftUnity.World
             CopyDefinition(BiomeId.Badlands, BiomeId.WoodedBadlands);
             CopyDefinition(BiomeId.WindsweptHills, BiomeId.WindsweptGravellyHills);
             CopyDefinition(BiomeId.WindsweptHills, BiomeId.WindsweptForest);
-            CopyDefinition(BiomeId.Plains, BiomeId.River);
         }
 
         private static void CopyDefinition(BiomeId source, BiomeId target)
@@ -121,7 +120,9 @@ namespace MineCraftUnity.World
                 GrassColor = definition.GrassColor,
                 FoliageColor = definition.FoliageColor,
                 GrassColorModifier = definition.GrassColorModifier,
-                WaterFogColor = definition.WaterFogColor
+                WaterFogColor = definition.WaterFogColor,
+                SkyColor = definition.SkyColor,
+                HasPrecipitation = definition.HasPrecipitation
             };
         }
 

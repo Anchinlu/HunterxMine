@@ -1,3 +1,4 @@
+using MineCraftUnity.Core;
 using MineCraftUnity.Rendering;
 using MineCraftUnity.World;
 using UnityEngine;
@@ -89,14 +90,24 @@ namespace MineCraftUnity.Player
 
         private void Update()
         {
+            if (_controller != null && !_controller.enabled)
+            {
+                return;
+            }
+
             UpdateWaterState();
 
-            if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
+            if (Keyboard.current != null
+                && Keyboard.current.escapeKey.wasPressedThisFrame
+                && !MineCraftUnity.UI.ChatCommandOverlay.IsOpen)
             {
                 UnlockCursor();
             }
 
-            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame && Cursor.lockState != CursorLockMode.Locked)
+            if (Mouse.current != null
+                && Mouse.current.leftButton.wasPressedThisFrame
+                && Cursor.lockState != CursorLockMode.Locked
+                && !MineCraftUnity.UI.ChatCommandOverlay.IsOpen)
             {
                 LockCursor();
             }
@@ -361,6 +372,50 @@ namespace MineCraftUnity.Player
         {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
+        }
+
+        public void TeleportToSurfaceWaitLoad(ChunkManager manager, int worldX, int worldZ)
+        {
+            StartCoroutine(TeleportCoroutine(manager, worldX, worldZ));
+        }
+
+        private System.Collections.IEnumerator TeleportCoroutine(ChunkManager manager, int worldX, int worldZ)
+        {
+            if (_controller != null) _controller.enabled = false;
+
+            // 1. Move player to the target X/Z but very high up, so ChunkManager starts loading around this new position.
+            transform.position = new Vector3(worldX + 0.5f, 255f, worldZ + 0.5f);
+            _verticalVelocity = 0f;
+
+            var chunkPos = new ChunkPos(Mathf.FloorToInt(worldX / 16f), Mathf.FloorToInt(worldZ / 16f));
+
+            // 2. Wait indefinitely (or a very long time) for the chunk logic to generate.
+            while (true)
+            {
+                if (manager.Level != null && manager.Level.TryGetChunk(chunkPos, out var chunk) && chunk.IsGenerated)
+                    break;
+                yield return null;
+            }
+
+            // 3. Now we have the chunk data, get the exact surface Y.
+            if (!manager.TrySampleTopSolidY(worldX, worldZ, out var surfaceY))
+            {
+                surfaceY = manager.SampleSurfaceHeight(worldX, worldZ);
+            }
+            surfaceY = Mathf.Max(surfaceY, WorldConstants.SeaLevel - 4);
+
+            // 4. Place player exactly above the surface.
+            transform.position = new Vector3(worldX + 0.5f, surfaceY + 2f, worldZ + 0.5f);
+
+            // 5. Wait for the mesh collider to be built below the player (max 2 seconds).
+            float timeout = 2f;
+            while (!Physics.Raycast(transform.position, Vector3.down, out _, 10f) && timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+
+            if (_controller != null) _controller.enabled = true;
         }
 
         private static void UnlockCursor()

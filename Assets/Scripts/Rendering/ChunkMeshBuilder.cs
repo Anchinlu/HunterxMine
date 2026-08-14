@@ -73,8 +73,17 @@ namespace MineCraftUnity.Rendering
                         }
                         else
                         {
-                            EmitBlockFaces(blockId, chunk, localX, y, localZ, origin, level,
-                                layerVertices, layerUvs, layerNormals, layerColors, layerTriangles, Buffers);
+                            var renderKind = BlockRegistry.Get(blockId).RenderKind;
+                            if (renderKind == BlockRenderKind.Cross)
+                            {
+                                EmitCrossModel(blockId, chunk, localX, y, localZ, origin,
+                                    layerVertices, layerUvs, layerNormals, layerColors, layerTriangles);
+                            }
+                            else
+                            {
+                                EmitBlockFaces(blockId, chunk, localX, y, localZ, origin, level,
+                                    layerVertices, layerUvs, layerNormals, layerColors, layerTriangles, Buffers);
+                            }
                         }
                     }
                 }
@@ -280,6 +289,13 @@ namespace MineCraftUnity.Rendering
                 return;
             }
 
+            if (definition.RenderKind == BlockRenderKind.CutoutCube)
+            {
+                EmitCutoutCubeFaces(blockId, chunk, localX, y, localZ, origin, level,
+                    layerVertices, layerUvs, layerNormals, layerColors, layerTriangles, collisionBuffers);
+                return;
+            }
+
             for (var i = 0; i < AllFaces.Length; i++)
             {
                 var face = AllFaces[i];
@@ -306,6 +322,45 @@ namespace MineCraftUnity.Rendering
                     {
                         AddFace(face, origin, collisionBuffers.CollisionVertices, collisionBuffers.CollisionTriangles);
                     }
+                }
+            }
+        }
+
+        private static void EmitCutoutCubeFaces(
+            BlockId blockId,
+            Chunk chunk,
+            int localX,
+            int y,
+            int localZ,
+            Vector3 origin,
+            Level level,
+            List<Vector3>[] layerVertices,
+            List<Vector2>[] layerUvs,
+            List<Vector3>[] layerNormals,
+            List<Color32>[] layerColors,
+            List<int>[] layerTriangles,
+            MeshBuildBuffers collisionBuffers)
+        {
+            var meshLayer = BlockIdToLayer(blockId);
+            var foliageTint = GetFoliageTint(chunk, localX, y, localZ);
+            for (var fi = 0; fi < AllFaces.Length; fi++)
+            {
+                var cutoutFace = AllFaces[fi];
+                if (!level.ShouldRenderFaceInChunk(chunk, localX, y, localZ, cutoutFace, blockId))
+                {
+                    continue;
+                }
+
+                AddFace(cutoutFace, origin, MultiplyTint(foliageTint, GetBlockFaceTint(cutoutFace)),
+                    layerVertices[(int)meshLayer], layerUvs[(int)meshLayer],
+                    layerNormals[(int)meshLayer], layerColors[(int)meshLayer], layerTriangles[(int)meshLayer]);
+            }
+
+            if (BlockRegistry.IsSolid(blockId))
+            {
+                for (var cf = 0; cf < AllFaces.Length; cf++)
+                {
+                    AddFace(AllFaces[cf], origin, collisionBuffers.CollisionVertices, collisionBuffers.CollisionTriangles);
                 }
             }
         }
@@ -400,8 +455,122 @@ namespace MineCraftUnity.Rendering
             BlockId.Water => ChunkMeshLayer.Water,
             BlockId.Bedrock => ChunkMeshLayer.Bedrock,
             BlockId.Gravel => ChunkMeshLayer.Gravel,
+            BlockId.ShortGrass => ChunkMeshLayer.ShortGrass,
+            BlockId.Fern => ChunkMeshLayer.Fern,
+            BlockId.Dandelion => ChunkMeshLayer.Dandelion,
+            BlockId.Poppy => ChunkMeshLayer.Poppy,
+            BlockId.OakLeaves => ChunkMeshLayer.OakLeaves,
+            BlockId.BirchLeaves => ChunkMeshLayer.BirchLeaves,
+            BlockId.SpruceLeaves => ChunkMeshLayer.SpruceLeaves,
+            BlockId.JungleLeaves => ChunkMeshLayer.JungleLeaves,
+            BlockId.AcaciaLeaves => ChunkMeshLayer.AcaciaLeaves,
+            BlockId.DarkOakLeaves => ChunkMeshLayer.DarkOakLeaves,
+            BlockId.CherryLeaves => ChunkMeshLayer.CherryLeaves,
+            BlockId.MangroveLeaves => ChunkMeshLayer.MangroveLeaves,
+            BlockId.PaleOakLeaves => ChunkMeshLayer.PaleOakLeaves,
+            BlockId.OakLog => ChunkMeshLayer.OakLog,
+            BlockId.BirchLog => ChunkMeshLayer.BirchLog,
+            BlockId.SpruceLog => ChunkMeshLayer.SpruceLog,
+            BlockId.JungleLog => ChunkMeshLayer.JungleLog,
+            BlockId.AcaciaLog => ChunkMeshLayer.AcaciaLog,
+            BlockId.DarkOakLog => ChunkMeshLayer.DarkOakLog,
+            BlockId.CherryLog => ChunkMeshLayer.CherryLog,
+            BlockId.MangroveLog => ChunkMeshLayer.MangroveLog,
+            BlockId.PaleOakLog => ChunkMeshLayer.PaleOakLog,
             _ => ChunkMeshLayer.Stone
         };
+
+        private static Color32 GetGrassTint(Chunk chunk, int localX, int y, int localZ)
+        {
+            var biome = chunk.GetBiome(localX, y, localZ);
+            return ToColor32(BiomeRegistry.GetGrassTint(biome));
+        }
+
+        private static Color32 GetFoliageTint(Chunk chunk, int localX, int y, int localZ)
+        {
+            var biome = chunk.GetBiome(localX, y, localZ);
+            return ToColor32(BiomeRegistry.GetFoliageTint(biome));
+        }
+
+        private static Color32 ToColor32(Color color) =>
+            new((byte)(color.r * 255f), (byte)(color.g * 255f), (byte)(color.b * 255f), 255);
+
+        /// <summary>MC ref: two diagonal cross quads (tinted_plains_cross model).</summary>
+        private static void EmitCrossModel(
+            BlockId blockId,
+            Chunk chunk,
+            int localX,
+            int y,
+            int localZ,
+            Vector3 origin,
+            List<Vector3>[] layerVertices,
+            List<Vector2>[] layerUvs,
+            List<Vector3>[] layerNormals,
+            List<Color32>[] layerColors,
+            List<int>[] layerTriangles)
+        {
+            var layer = (int)BlockIdToLayer(blockId);
+            var tint = BlockRegistry.UsesGrassTint(blockId)
+                ? GetGrassTint(chunk, localX, y, localZ)
+                : WhiteVertex;
+            var shade = BlockFaceLighting.GetShadeColor(BlockFace.Up);
+            tint = MultiplyTint(tint, shade);
+
+            AddCrossQuad(origin,
+                new Vector3(0f, 0f, 0f), new Vector3(1f, 0f, 1f), new Vector3(1f, 1f, 1f), new Vector3(0f, 1f, 0f),
+                tint, layerVertices[layer], layerUvs[layer], layerNormals[layer], layerColors[layer], layerTriangles[layer]);
+            AddCrossQuad(origin,
+                new Vector3(1f, 0f, 0f), new Vector3(0f, 0f, 1f), new Vector3(0f, 1f, 1f), new Vector3(1f, 1f, 0f),
+                tint, layerVertices[layer], layerUvs[layer], layerNormals[layer], layerColors[layer], layerTriangles[layer]);
+        }
+
+        private static Color32 MultiplyTint(Color32 tint, Color32 shade)
+        {
+            return new Color32(
+                (byte)(tint.r * shade.r / 255),
+                (byte)(tint.g * shade.g / 255),
+                (byte)(tint.b * shade.b / 255),
+                255);
+        }
+
+        private static void AddCrossQuad(
+            Vector3 origin,
+            Vector3 v0Local,
+            Vector3 v1Local,
+            Vector3 v2Local,
+            Vector3 v3Local,
+            Color32 tint,
+            List<Vector3> vertices,
+            List<Vector2> uvs,
+            List<Vector3> normals,
+            List<Color32> colors,
+            List<int> triangles)
+        {
+            var start = vertices.Count;
+            var v0 = origin + v0Local;
+            var v1 = origin + v1Local;
+            var v2 = origin + v2Local;
+            var v3 = origin + v3Local;
+            var edge1 = v1 - v0;
+            var edge2 = v2 - v0;
+            var normal = Vector3.Cross(edge1, edge2).normalized;
+
+            vertices.Add(v0);
+            vertices.Add(v1);
+            vertices.Add(v2);
+            vertices.Add(v3);
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(1f, 0f));
+            uvs.Add(new Vector2(1f, 1f));
+            uvs.Add(new Vector2(0f, 1f));
+            for (var i = 0; i < 4; i++)
+            {
+                normals.Add(normal);
+                colors.Add(tint);
+            }
+
+            AddQuadTriangles(triangles, start, v0, v1, v2, v3, normal);
+        }
 
         private static void AddFace(
             BlockFace face,

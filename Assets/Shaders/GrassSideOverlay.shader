@@ -26,6 +26,7 @@ Shader "MineCraft/GrassSideOverlay"
             #pragma multi_compile_fog
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
+            #include "MineCraftLighting.hlsl"
 
             struct Attributes
             {
@@ -49,15 +50,13 @@ Shader "MineCraft/GrassSideOverlay"
                 half4 _GrassTint;
             CBUFFER_END
 
-            float _MineCraftSkyLight;
-
             Varyings vert(Attributes input)
             {
                 Varyings output;
                 VertexPositionInputs vertexInput = GetVertexPositionInputs(input.positionOS.xyz);
                 output.positionCS = vertexInput.positionCS;
                 output.uv = TRANSFORM_TEX(input.uv, _OverlayMap);
-                output.color = input.color;
+                output.color = MineCraftResolveVertexColor(input.color);
                 output.fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
                 return output;
             }
@@ -67,7 +66,7 @@ Shader "MineCraft/GrassSideOverlay"
                 half4 overlayTex = SAMPLE_TEXTURE2D(_OverlayMap, sampler_OverlayMap, input.uv);
                 clip(overlayTex.r - 0.001h);
                 half4 color = half4(overlayTex.rgb * _GrassTint.rgb * input.color.rgb, 1);
-                color.rgb *= _MineCraftSkyLight;
+                color.rgb *= MineCraftResolveSkyLight();
                 color.rgb = MixFog(color.rgb, input.fogFactor);
                 return color;
             }

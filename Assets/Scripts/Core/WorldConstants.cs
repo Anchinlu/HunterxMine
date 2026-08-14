@@ -47,7 +47,7 @@ namespace MineCraftUnity.Core
         public const float CollisionBudgetMs = 4f;
 
         /// <summary>Debug tag for F3 overlay — bump when pipeline behavior changes.</summary>
-        public const string PipelineVersion = "P7";
+        public const string PipelineVersion = "P12";
 
         /// <summary>MC biome resolution — one biome cell per 4×4×4 blocks.</summary>
         public const int BiomeQuartSize = 4;

@@ -105,7 +105,7 @@ namespace MineCraftUnity.UI
             EnsureStyles();
             ResolveReferences();
 
-            const float width = 360f;
+            const float width = 400f;
             const float margin = 10f;
             var statsText = BuildStatsText(includeHeader: true);
             var contentHeight = _textStyle.CalcHeight(new GUIContent(statsText), width - 16f);
@@ -268,7 +268,7 @@ namespace MineCraftUnity.UI
             var dayNight = DayNightController.Instance;
             if (dayNight != null)
             {
-                text.Append(" | Time=").Append(WorldTime.FormatClock(dayNight.WorldTime.DayTime));
+                text.Append(" | Time=").Append(dayNight.WorldTime.FormatDebugTime());
             }
         }
 
@@ -331,7 +331,11 @@ namespace MineCraftUnity.UI
             var dayNight = DayNightController.Instance;
             if (dayNight != null)
             {
-                text.AppendLine($"Time: {WorldTime.FormatClock(dayNight.WorldTime.DayTime)}  (MC day/24000)");
+                var wt = dayNight.WorldTime;
+                var weather = dayNight.IsThundering ? "thunder"
+                    : dayNight.RainLevel > 0.05f ? "rain" : "clear";
+                text.AppendLine($"Time: {wt.FormatDebugTime()}  (20 tick/s @ 1×)");
+                text.AppendLine($"Weather: {weather}  rain={dayNight.RainLevel:0.00}");
             }
         }
 
