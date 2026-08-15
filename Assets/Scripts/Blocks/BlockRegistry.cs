@@ -38,7 +38,8 @@ namespace MineCraftUnity.Blocks
             [BlockId.DarkOakLog] = new BlockDefinition(BlockId.DarkOakLog, "dark_oak_log", BlockRenderKind.Cube, true, false, true),
             [BlockId.CherryLog] = new BlockDefinition(BlockId.CherryLog, "cherry_log", BlockRenderKind.Cube, true, false, true),
             [BlockId.MangroveLog] = new BlockDefinition(BlockId.MangroveLog, "mangrove_log", BlockRenderKind.Cube, true, false, true),
-            [BlockId.PaleOakLog] = new BlockDefinition(BlockId.PaleOakLog, "pale_oak_log", BlockRenderKind.Cube, true, false, true)
+            [BlockId.PaleOakLog] = new BlockDefinition(BlockId.PaleOakLog, "pale_oak_log", BlockRenderKind.Cube, true, false, true),
+            [BlockId.Snow] = new BlockDefinition(BlockId.Snow, "snow", BlockRenderKind.Cube, true, false, true)
         };
 
         public static BlockDefinition Get(BlockId id) => Definitions[id];
@@ -47,10 +48,22 @@ namespace MineCraftUnity.Blocks
 
         public static bool IsFluid(BlockId id) => Definitions[id].IsFluid;
 
+
+        public static bool IsOpaque(BlockId id)
+        {
+            var def = Definitions[id];
+            return def.IsSolid && def.RenderKind != BlockRenderKind.CutoutCube && def.RenderKind != BlockRenderKind.Cross;
+        }
+
         public static bool CullsSameBlockFaces(BlockId id) => Definitions[id].CullsSameBlockFaces;
 
         public static bool IsPlant(BlockId id) =>
             id is BlockId.ShortGrass or BlockId.Fern or BlockId.Dandelion or BlockId.Poppy;
+
+        public static bool IsLog(BlockId id) =>
+            id is BlockId.OakLog or BlockId.BirchLog or BlockId.SpruceLog
+            or BlockId.JungleLog or BlockId.AcaciaLog or BlockId.DarkOakLog
+            or BlockId.CherryLog or BlockId.MangroveLog or BlockId.PaleOakLog;
 
         public static bool IsLeaves(BlockId id) =>
             id is BlockId.OakLeaves or BlockId.BirchLeaves or BlockId.SpruceLeaves

@@ -5,12 +5,31 @@ using MineCraftUnity.Core;
 
 namespace MineCraftUnity.World
 {
+    public readonly struct PendingBlock
+    {
+        public readonly BlockPos Pos;
+        public readonly BlockId Id;
+        public readonly byte Metadata;
+
+        public PendingBlock(BlockPos pos, BlockId id, byte metadata = 0)
+        {
+            Pos = pos;
+            Id = id;
+            Metadata = metadata;
+        }
+
+        public bool Equals(PendingBlock other) => Pos.Equals(other.Pos) && Id == other.Id && Metadata == other.Metadata;
+        public override bool Equals(object obj) => obj is PendingBlock other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Pos, Id, Metadata);
+    }
+
     /// <summary>
     /// MC ref: net.minecraft.world.level.Level
     /// </summary>
     public sealed class Level
     {
         private readonly Dictionary<ChunkPos, Chunk> _chunks = new();
+        private readonly Dictionary<ChunkPos, HashSet<PendingBlock>> _pendingDecorations = new();
         public int Seed { get; }
 
         public event Action<ChunkPos> BlockChanged;
@@ -120,6 +139,81 @@ namespace MineCraftUnity.World
             chunk.SetBlock(localX, worldY, localZ, id);
             NotifyBlockChanged(chunkPos, worldX, worldY, worldZ);
             return true;
+        }
+
+        public void SetBlockDuringGeneration(int worldX, int worldY, int worldZ, BlockId id, byte metadata, HashSet<ChunkPos> changedChunks)
+        {
+            if (worldY < WorldConstants.MinY || worldY > WorldConstants.MaxY)
+            {
+                return;
+            }
+
+            var chunkPos = new ChunkPos(
+                FloorDiv(worldX, WorldConstants.ChunkSize),
+                FloorDiv(worldZ, WorldConstants.ChunkSize));
+
+            if (!_chunks.TryGetValue(chunkPos, out var chunk) || !chunk.IsGenerated)
+            {
+                if (!_pendingDecorations.TryGetValue(chunkPos, out var pending))
+                {
+                    pending = new HashSet<PendingBlock>();
+                    _pendingDecorations[chunkPos] = pending;
+                }
+                pending.Add(new PendingBlock(new BlockPos(worldX, worldY, worldZ), id, metadata));
+                return;
+            }
+
+            var localX = ModWorldCoord(worldX, WorldConstants.ChunkSize);
+            var localZ = ModWorldCoord(worldZ, WorldConstants.ChunkSize);
+            
+            var currentBlock = chunk.GetBlock(localX, worldY, localZ);
+            if (currentBlock != BlockId.Air && !BlockRegistry.IsLeaves(currentBlock))
+            {
+                return;
+            }
+            
+            chunk.SetBlock(localX, worldY, localZ, id, metadata);
+            chunk.IsMeshDirty = true;
+            changedChunks.Add(chunkPos);
+
+            if (localX == 0) changedChunks.Add(new ChunkPos(chunkPos.X - 1, chunkPos.Z));
+            else if (localX == WorldConstants.ChunkSize - 1) changedChunks.Add(new ChunkPos(chunkPos.X + 1, chunkPos.Z));
+
+            if (localZ == 0) changedChunks.Add(new ChunkPos(chunkPos.X, chunkPos.Z - 1));
+            else if (localZ == WorldConstants.ChunkSize - 1) changedChunks.Add(new ChunkPos(chunkPos.X, chunkPos.Z + 1));
+        }
+
+        public void ApplyPendingDecorations(Chunk chunk, HashSet<ChunkPos> changedChunks)
+        {
+            if (!_pendingDecorations.TryGetValue(chunk.Position, out var pending))
+            {
+                return;
+            }
+
+            foreach (var pendingBlock in pending)
+            {
+                var localX = ModWorldCoord(pendingBlock.Pos.X, WorldConstants.ChunkSize);
+                var localZ = ModWorldCoord(pendingBlock.Pos.Z, WorldConstants.ChunkSize);
+                var worldY = pendingBlock.Pos.Y;
+                
+                var currentBlock = chunk.GetBlock(localX, worldY, localZ);
+                if (currentBlock != BlockId.Air && !BlockRegistry.IsLeaves(currentBlock))
+                {
+                    continue;
+                }
+                
+                chunk.SetBlock(localX, worldY, localZ, pendingBlock.Id, pendingBlock.Metadata);
+                chunk.IsMeshDirty = true;
+                changedChunks.Add(chunk.Position);
+                
+                if (localX == 0) changedChunks.Add(new ChunkPos(chunk.Position.X - 1, chunk.Position.Z));
+                else if (localX == WorldConstants.ChunkSize - 1) changedChunks.Add(new ChunkPos(chunk.Position.X + 1, chunk.Position.Z));
+
+                if (localZ == 0) changedChunks.Add(new ChunkPos(chunk.Position.X, chunk.Position.Z - 1));
+                else if (localZ == WorldConstants.ChunkSize - 1) changedChunks.Add(new ChunkPos(chunk.Position.X, chunk.Position.Z + 1));
+            }
+
+            _pendingDecorations.Remove(chunk.Position);
         }
 
         public bool SetWater(BlockPos pos, byte level, bool scheduleTick = false)
@@ -266,7 +360,7 @@ namespace MineCraftUnity.World
                 return currentLevel != neighborLevel;
             }
 
-            if (!BlockRegistry.IsSolid(neighborId))
+            if (!BlockRegistry.IsOpaque(neighborId))
             {
                 return currentId != neighborId;
             }

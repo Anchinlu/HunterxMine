@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MineCraftUnity.Core;
@@ -7,12 +8,30 @@ using MineCraftUnity.Rendering;
 
 namespace MineCraftUnity.World
 {
+    public readonly struct ChunkGenerationResult
+    {
+        public ChunkPos Position { get; }
+        public bool Success { get; }
+        public bool WasSkipped { get; }
+        public string ErrorMessage { get; }
+        public HashSet<ChunkPos> ChangedChunks { get; }
+
+        public ChunkGenerationResult(ChunkPos position, bool success, bool wasSkipped, string errorMessage, HashSet<ChunkPos> changedChunks)
+        {
+            Position = position;
+            Success = success;
+            WasSkipped = wasSkipped;
+            ErrorMessage = errorMessage;
+            ChangedChunks = changedChunks;
+        }
+    }
+
     /// <summary>
     /// Runs chunk block fill on a thread-pool worker. Unity APIs are not used here.
     /// </summary>
     public sealed class ChunkGenerationWorker : IDisposable
     {
-        private readonly ConcurrentQueue<ChunkPos> _completed = new();
+        private readonly ConcurrentQueue<ChunkGenerationResult> _completed = new();
         private readonly SemaphoreSlim _parallelLimit;
         private int _disposed;
 
@@ -22,12 +41,12 @@ namespace MineCraftUnity.World
             _parallelLimit = new SemaphoreSlim(maxParallel, maxParallel);
         }
 
-        public bool TryDequeueCompleted(out ChunkPos pos) => _completed.TryDequeue(out pos);
+        public bool TryDequeueCompleted(out ChunkGenerationResult result) => _completed.TryDequeue(out result);
 
         public bool TryStart(
             ChunkPos pos,
             Level level,
-            OverworldGenerator generator,
+            IChunkGenerator generator,
             object worldLock,
             Func<ChunkPos, bool> isStillNeeded)
         {
@@ -38,6 +57,11 @@ namespace MineCraftUnity.World
 
             Task.Run(() =>
             {
+                bool success = true;
+                bool wasSkipped = false;
+                string errorMessage = null;
+                var changedChunks = new HashSet<ChunkPos>();
+
                 try
                 {
                     if (isStillNeeded(pos))
@@ -49,16 +73,25 @@ namespace MineCraftUnity.World
                             {
                                 using (ChunkProfilerMarkers.GenerateChunk.Auto())
                                 {
-                                    generator.GenerateChunk(level, chunk);
+                                    generator.GenerateChunk(level, chunk, changedChunks);
+                                    level.ApplyPendingDecorations(chunk, changedChunks);
                                 }
                             }
                         }
                     }
-
-                    _completed.Enqueue(pos);
+                    else
+                    {
+                        wasSkipped = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    success = false;
+                    errorMessage = ex.ToString();
                 }
                 finally
                 {
+                    _completed.Enqueue(new ChunkGenerationResult(pos, success, wasSkipped, errorMessage, changedChunks));
                     _parallelLimit.Release();
                 }
             });

@@ -34,6 +34,7 @@ namespace MineCraftUnity.Blocks
         DarkOakLeaves = 26,
         CherryLeaves = 27,
         MangroveLeaves = 28,
-        PaleOakLeaves = 29
+        PaleOakLeaves = 29,
+        Snow = 30
     }
 }

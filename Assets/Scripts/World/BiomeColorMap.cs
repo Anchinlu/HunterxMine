@@ -65,8 +65,8 @@ namespace MineCraftUnity.World
             
             // X: 1.0 (hot) -> 0, 0.0 (cold) -> width-1
             int pixelX = Mathf.FloorToInt((1f - adjTemp) * (width - 1));
-            // Y: 1.0 (wet) -> 0, 0.0 (dry) -> height-1 (Unity GetPixels32 reads bottom-up, so we invert Y based on user feedback)
-            int pixelY = Mathf.FloorToInt((1f - adjHumid) * (height - 1));
+            // Y: 1.0 (wet) -> height-1, 0.0 (dry) -> 0 (Unity GetPixels32 reads bottom-up)
+            int pixelY = Mathf.FloorToInt(adjHumid * (height - 1));
             
             pixelX = Mathf.Clamp(pixelX, 0, width - 1);
             pixelY = Mathf.Clamp(pixelY, 0, height - 1);

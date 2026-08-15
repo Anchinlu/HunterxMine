@@ -14,11 +14,13 @@ namespace MineCraftUnity.Rendering
     public sealed class ChunkManager : MonoBehaviour
     {
         [SerializeField] private int seed = 12345;
-        [SerializeField] private int viewDistance = WorldConstants.DefaultViewDistance;
-        [SerializeField] private int collisionDistance = WorldConstants.CollisionDistance;
+        [SerializeField] private WorldMode worldMode = WorldMode.FlatTest;
+        [SerializeField] private int viewDistance = 8;
+        [SerializeField] private int collisionDistance = 4;
         [SerializeField] private Transform followTarget;
 
         public int Seed => seed;
+        public WorldMode WorldMode => worldMode;
         public int ViewDistance => viewDistance;
         public int LoadedChunkCount => _renderers.Count;
         public int PendingGenerationCount => _generationList.Count + _generationInFlight.Count;
@@ -32,7 +34,7 @@ namespace MineCraftUnity.Rendering
         public static string PipelineVersion => WorldConstants.PipelineVersion;
 
         private Level _level;
-        private OverworldGenerator _generator;
+        private IChunkGenerator _generator;
         private readonly Dictionary<ChunkPos, ChunkRenderer> _renderers = new();
         private readonly HashSet<ChunkPos> _neededChunks = new();
 
@@ -59,6 +61,14 @@ namespace MineCraftUnity.Rendering
         private readonly Dictionary<ChunkPos, bool> _collisionApplied = new();
         private FluidSimulator _fluidSimulator;
 
+        private struct RetryInfo
+        {
+            public int Count;
+            public float NextRetryTime;
+        }
+        private readonly Dictionary<ChunkPos, RetryInfo> _failedRetries = new();
+        private HashSet<ChunkPos> _neededChunksSnapshot = new();
+
         public Level Level
         {
             get
@@ -68,7 +78,7 @@ namespace MineCraftUnity.Rendering
             }
         }
 
-        public OverworldGenerator Generator
+        public IChunkGenerator Generator
         {
             get
             {
@@ -85,7 +95,14 @@ namespace MineCraftUnity.Rendering
             }
 
             _level = new Level(seed);
-            _generator = new OverworldGenerator(seed);
+            if (worldMode == WorldMode.FlatTest)
+            {
+                _generator = new FlatTestGenerator();
+            }
+            else
+            {
+                _generator = new OverworldGenerator(seed);
+            }
             _fluidSimulator = new FluidSimulator(_level);
             WireLevelEvents();
             _generationWorker ??= new ChunkGenerationWorker(WorldConstants.MaxParallelChunkWorkers);
@@ -161,6 +178,7 @@ namespace MineCraftUnity.Rendering
             var radius = Mathf.Max(collisionDistance, WorldConstants.SpawnPriorityRadius);
 
             _spawnChunks.Clear();
+            _failedRetries.Clear();
             for (var dx = -radius; dx <= radius; dx++)
             {
                 for (var dz = -radius; dz <= radius; dz++)
@@ -178,20 +196,43 @@ namespace MineCraftUnity.Rendering
             WorldLoadingOverlay.Show("Generating world…");
             WorldLoadingOverlay.SetProgress(0f);
 
-            while (!AreAllSpawnChunksReady())
-            {
-                var ready = CountReadySpawnChunks();
-                WorldLoadingOverlay.SetProgress(total > 0 ? (float)ready / total : 1f);
-                yield return null;
-            }
+            float startTime = Time.realtimeSinceStartup;
+            float lastProgressTime = startTime;
+            int lastReadyCount = -1;
 
-            WorldLoadingOverlay.SetProgress(1f);
-            UpdateCollisionStatesIfNeeded(center, force: true);
-            WorldLoadingOverlay.Hide();
-            IsSpawnAreaReady = true;
-            _spawnChunks.Clear();
-            _spawnAreaCoroutine = null;
-            UpdateChunkSet(force: true);
+            try
+            {
+                while (!AreAllSpawnChunksReady())
+                {
+                    var ready = CountReadySpawnChunks();
+                    if (ready > lastReadyCount)
+                    {
+                        lastReadyCount = ready;
+                        lastProgressTime = Time.realtimeSinceStartup;
+                    }
+
+                    WorldLoadingOverlay.SetProgress(total > 0 ? (float)ready / total : 1f);
+
+                    float currentTime = Time.realtimeSinceStartup;
+                    if (currentTime - startTime > 15f || currentTime - lastProgressTime > 5f)
+                    {
+                        UnityEngine.Debug.LogWarning($"Spawn area loading timed out (Total time: {currentTime - startTime:F1}s, Idle: {currentTime - lastProgressTime:F1}s). Proceeding to gameplay.");
+                        break;
+                    }
+
+                    yield return null;
+                }
+            }
+            finally
+            {
+                WorldLoadingOverlay.SetProgress(1f);
+                UpdateCollisionStatesIfNeeded(center, force: true);
+                WorldLoadingOverlay.Hide();
+                IsSpawnAreaReady = true;
+                _spawnChunks.Clear();
+                _spawnAreaCoroutine = null;
+                UpdateChunkSet(force: true);
+            }
         }
 
         private void Update()
@@ -208,6 +249,7 @@ namespace MineCraftUnity.Rendering
                 UpdateChunkSet(force: false);
             }
 
+            ProcessRetries();
             ProcessQueues();
             ProcessFluidTicks();
         }
@@ -220,6 +262,59 @@ namespace MineCraftUnity.Rendering
             }
 
             _fluidSimulator.ProcessTicks(WorldConstants.MaxFluidTicksPerFrame);
+        }
+
+        private void ProcessRetries()
+        {
+            if (_failedRetries.Count == 0) return;
+
+            var currentTime = Time.time;
+            var toRetry = new List<ChunkPos>();
+            foreach (var kvp in _failedRetries)
+            {
+                if (currentTime >= kvp.Value.NextRetryTime)
+                {
+                    toRetry.Add(kvp.Key);
+                }
+            }
+
+            foreach (var pos in toRetry)
+            {
+                if (!_neededChunks.Contains(pos))
+                {
+                    _failedRetries.Remove(pos);
+                    continue;
+                }
+
+                if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+                {
+                    ScheduleGeneration(pos);
+                }
+                else
+                {
+                    ScheduleMesh(pos);
+                }
+                
+                var info = _failedRetries[pos];
+                info.NextRetryTime = float.MaxValue;
+                _failedRetries[pos] = info;
+            }
+        }
+
+        private void HandleRetry(ChunkPos pos)
+        {
+            if (!_neededChunks.Contains(pos)) return;
+
+            if (!_failedRetries.TryGetValue(pos, out var retry))
+            {
+                retry = new RetryInfo { Count = 0, NextRetryTime = 0f };
+            }
+
+            retry.Count++;
+            float backoff = 0.25f * Mathf.Pow(2, Mathf.Min(retry.Count - 1, 3));
+            retry.NextRetryTime = Time.time + backoff;
+            
+            _failedRetries[pos] = retry;
         }
 
         public void Configure(int newSeed, int newViewDistance, Transform target = null)
@@ -253,6 +348,7 @@ namespace MineCraftUnity.Rendering
             }
 
             ClearWorld();
+            _failedRetries.Clear();
             _level = new Level(seed);
             _generator = new OverworldGenerator(seed);
             _fluidSimulator = new FluidSimulator(_level);
@@ -347,6 +443,8 @@ namespace MineCraftUnity.Rendering
                 }
             }
 
+            _neededChunksSnapshot = new HashSet<ChunkPos>(_neededChunks);
+
             var toRemove = new List<ChunkPos>();
             foreach (var pos in _renderers.Keys)
             {
@@ -417,13 +515,24 @@ namespace MineCraftUnity.Rendering
 
         private void DrainAsyncGenerationResults()
         {
-            while (_generationWorker.TryDequeueCompleted(out var pos))
+            while (_generationWorker.TryDequeueCompleted(out var result))
             {
+                var pos = result.Position;
                 _generationInFlight.Remove(pos);
-                if (!_neededChunks.Contains(pos))
+
+                if (!result.Success)
+                {
+                    UnityEngine.Debug.LogError($"[ChunkManager] Generation failed at {pos}: {result.ErrorMessage}");
+                    HandleRetry(pos);
+                    continue;
+                }
+
+                if (result.WasSkipped || !_neededChunks.Contains(pos))
                 {
                     continue;
                 }
+                
+                _failedRetries.Remove(pos);
 
                 if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
                 {
@@ -433,6 +542,17 @@ namespace MineCraftUnity.Rendering
                 _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
                 MarkAdjacentMeshesDirty(pos);
                 ScheduleMesh(pos);
+                
+                if (result.ChangedChunks != null)
+                {
+                    foreach (var changedPos in result.ChangedChunks)
+                    {
+                        if (!changedPos.Equals(pos))
+                        {
+                            ScheduleMesh(changedPos);
+                        }
+                    }
+                }
             }
         }
 
@@ -446,15 +566,28 @@ namespace MineCraftUnity.Rendering
             while (applied < maxApply &&
                    _meshWorker.TryDequeueCompleted(out var result))
             {
-                _meshInFlight.Remove(result.Position);
-                if (!_neededChunks.Contains(result.Position))
+                var pos = result.Position;
+                _meshInFlight.Remove(pos);
+
+                if (!result.Success)
                 {
+                    UnityEngine.Debug.LogError($"[ChunkManager] Mesh failed at {pos}: {result.ErrorMessage}");
+                    HandleRetry(pos);
+                    UnscheduleMesh(pos);
                     continue;
                 }
 
+                if (result.WasSkipped || !_neededChunks.Contains(pos))
+                {
+                    UnscheduleMesh(pos);
+                    continue;
+                }
+                
+                _failedRetries.Remove(pos);
+
                 ApplyMeshResult(result);
-                UnscheduleMesh(result.Position);
-                RequestCollisionState(result.Position, result.WithCollision);
+                UnscheduleMesh(pos);
+                RequestCollisionState(pos, result.WithCollision);
                 applied++;
             }
 
@@ -548,7 +681,7 @@ namespace MineCraftUnity.Rendering
             }
         }
 
-        private bool IsChunkStillNeeded(ChunkPos pos) => _neededChunks.Contains(pos);
+        private bool IsChunkStillNeeded(ChunkPos pos) => _neededChunksSnapshot.Contains(pos);
 
         private void ProcessGenerationQueueSync()
         {
@@ -573,14 +706,23 @@ namespace MineCraftUnity.Rendering
                     continue;
                 }
 
+                var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
                 using (ChunkProfilerMarkers.GenerateChunk.Auto())
                 {
-                    _generator.GenerateChunk(_level, chunk);
+                    _generator.GenerateChunk(_level, chunk, changedChunks);
+                    _level.ApplyPendingDecorations(chunk, changedChunks);
                 }
 
                 _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
                 MarkAdjacentMeshesDirty(pos);
                 ScheduleMesh(pos);
+                foreach (var changedPos in changedChunks)
+                {
+                    if (!changedPos.Equals(pos))
+                    {
+                        ScheduleMesh(changedPos);
+                    }
+                }
                 generated++;
             }
         }
@@ -624,12 +766,21 @@ namespace MineCraftUnity.Rendering
             var chunk = _level.GetOrCreateChunk(pos);
             if (!chunk.IsGenerated)
             {
+                var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
                 using (ChunkProfilerMarkers.GenerateChunk.Auto())
                 {
-                    _generator.GenerateChunk(_level, chunk);
+                    _generator.GenerateChunk(_level, chunk, changedChunks);
+                    _level.ApplyPendingDecorations(chunk, changedChunks);
                 }
 
                 MarkAdjacentMeshesDirty(pos);
+                foreach (var changedPos in changedChunks)
+                {
+                    if (!changedPos.Equals(pos))
+                    {
+                        ScheduleMesh(changedPos);
+                    }
+                }
             }
 
             UnscheduleGeneration(pos);

@@ -15,7 +15,11 @@ namespace MineCraftUnity.World
         private static readonly Dictionary<BiomeId, Color> _grassCache = new();
         private static readonly Dictionary<BiomeId, Color> _foliageCache = new();
 
-        public static void EnsureLoaded() => BiomeDatapackLoader.EnsureLoaded();
+        public static void EnsureLoaded()
+        {
+            BiomeDatapackLoader.EnsureLoaded();
+            BiomeColorMap.EnsureInitialized();
+        }
 
         public static string GetDisplayName(BiomeId id) =>
             id switch
@@ -231,6 +235,10 @@ namespace MineCraftUnity.World
             id is BiomeId.WindsweptGravellyHills or BiomeId.WindsweptHills;
 
         public static bool IsStoneShore(BiomeId id) => id == BiomeId.StonyShore;
+
+        public static bool IsSnowyBiome(BiomeId id) =>
+            id is BiomeId.SnowyPlains or BiomeId.IceSpikes or BiomeId.SnowyTaiga
+               or BiomeId.Grove or BiomeId.SnowySlopes or BiomeId.FrozenPeaks or BiomeId.JaggedPeaks;
 
         public static BlockId GetTopSurfaceBlock(BiomeId biome, bool isUnderwater, bool isShallowUnderwater)
         {

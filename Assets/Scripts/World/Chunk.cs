@@ -11,6 +11,7 @@ namespace MineCraftUnity.World
     {
         public ChunkPos Position { get; }
         private readonly BlockId[] _blocks = new BlockId[WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize];
+        private readonly byte[] _metadata = new byte[WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize];
         private readonly byte[] _fluidLevels = new byte[WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize];
         private readonly BiomeId[] _quartBiomes = new BiomeId[WorldConstants.BiomeQuartVolume];
         public bool IsGenerated { get; private set; }
@@ -46,7 +47,17 @@ namespace MineCraftUnity.World
             return _fluidLevels[ToIndex(localX, y, localZ)];
         }
 
-        public void SetBlock(int localX, int y, int localZ, BlockId id, bool markDirty = true)
+        public byte GetMetadata(int localX, int y, int localZ)
+        {
+            if (!IsInside(localX, y, localZ))
+            {
+                return 0;
+            }
+
+            return _metadata[ToIndex(localX, y, localZ)];
+        }
+
+        public void SetBlock(int localX, int y, int localZ, BlockId id, byte metadata = 0, bool markDirty = true)
         {
             if (!IsInside(localX, y, localZ))
             {
@@ -55,6 +66,7 @@ namespace MineCraftUnity.World
 
             var index = ToIndex(localX, y, localZ);
             _blocks[index] = id;
+            _metadata[index] = metadata;
             if (id == BlockId.Water)
             {
                 _fluidLevels[index] = FluidLevel.Source;

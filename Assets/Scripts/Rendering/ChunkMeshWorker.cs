@@ -13,11 +13,18 @@ namespace MineCraftUnity.Rendering
         public ChunkMeshData Data { get; }
         public bool WithCollision { get; }
 
-        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision)
+        public bool Success { get; }
+        public bool WasSkipped { get; }
+        public string ErrorMessage { get; }
+
+        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision, bool success = true, bool wasSkipped = false, string errorMessage = null)
         {
             Position = position;
             Data = data;
             WithCollision = withCollision;
+            Success = success;
+            WasSkipped = wasSkipped;
+            ErrorMessage = errorMessage;
         }
     }
 
@@ -53,6 +60,9 @@ namespace MineCraftUnity.Rendering
             Task.Run(() =>
             {
                 ChunkMeshData data = null;
+                bool success = true;
+                bool wasSkipped = false;
+                string errorMessage = null;
                 try
                 {
                     if (isStillNeeded(pos))
@@ -67,13 +77,25 @@ namespace MineCraftUnity.Rendering
                                     data = ChunkMeshBuilder.ComputeMeshData(chunk, level);
                                 }
                             }
+                            else
+                            {
+                                wasSkipped = true;
+                            }
                         }
                     }
-
-                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision));
+                    else
+                    {
+                        wasSkipped = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    success = false;
+                    errorMessage = ex.ToString();
                 }
                 finally
                 {
+                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision, success, wasSkipped, errorMessage));
                     _parallelLimit.Release();
                 }
             });

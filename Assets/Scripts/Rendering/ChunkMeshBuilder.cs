@@ -316,8 +316,9 @@ namespace MineCraftUnity.Rendering
                 else
                 {
                     var meshLayer = BlockIdToLayer(blockId);
+                    byte metadata = BlockRegistry.IsLog(blockId) ? chunk.GetMetadata(localX, y, localZ) : (byte)0;
                     AddFace(face, origin, GetBlockFaceTint(face), layerVertices[(int)meshLayer], layerUvs[(int)meshLayer],
-                        layerNormals[(int)meshLayer], layerColors[(int)meshLayer], layerTriangles[(int)meshLayer]);
+                        layerNormals[(int)meshLayer], layerColors[(int)meshLayer], layerTriangles[(int)meshLayer], metadata);
                     if (definition.IsSolid)
                     {
                         AddFace(face, origin, collisionBuffers.CollisionVertices, collisionBuffers.CollisionTriangles);
@@ -424,8 +425,10 @@ namespace MineCraftUnity.Rendering
             List<Color32>[] layerColors,
             List<int>[] layerTriangles)
         {
+            var biome = chunk.GetBiome(localX, y, localZ);
+            var isSnowy = BiomeRegistry.IsSnowyBiome(biome);
             var grassTint = BlockFaceLighting.ApplyShade(
-                (Color32)BiomeRegistry.GetGrassTint(chunk.GetBiome(localX, y, localZ)),
+                (Color32)BiomeRegistry.GetGrassTint(biome),
                 face);
 
             switch (face)
@@ -439,10 +442,18 @@ namespace MineCraftUnity.Rendering
                         layerNormals[(int)ChunkMeshLayer.GrassBottom], layerColors[(int)ChunkMeshLayer.GrassBottom], layerTriangles[(int)ChunkMeshLayer.GrassBottom]);
                     break;
                 default:
-                    AddFace(face, origin, GetBlockFaceTint(face), layerVertices[(int)ChunkMeshLayer.GrassSide], layerUvs[(int)ChunkMeshLayer.GrassSide],
-                        layerNormals[(int)ChunkMeshLayer.GrassSide], layerColors[(int)ChunkMeshLayer.GrassSide], layerTriangles[(int)ChunkMeshLayer.GrassSide]);
-                    AddFace(face, origin, grassTint, layerVertices[(int)ChunkMeshLayer.GrassOverlay], layerUvs[(int)ChunkMeshLayer.GrassOverlay],
-                        layerNormals[(int)ChunkMeshLayer.GrassOverlay], layerColors[(int)ChunkMeshLayer.GrassOverlay], layerTriangles[(int)ChunkMeshLayer.GrassOverlay]);
+                    if (isSnowy)
+                    {
+                        AddFace(face, origin, GetBlockFaceTint(face), layerVertices[(int)ChunkMeshLayer.GrassSnowSide], layerUvs[(int)ChunkMeshLayer.GrassSnowSide],
+                            layerNormals[(int)ChunkMeshLayer.GrassSnowSide], layerColors[(int)ChunkMeshLayer.GrassSnowSide], layerTriangles[(int)ChunkMeshLayer.GrassSnowSide]);
+                    }
+                    else
+                    {
+                        AddFace(face, origin, GetBlockFaceTint(face), layerVertices[(int)ChunkMeshLayer.GrassSide], layerUvs[(int)ChunkMeshLayer.GrassSide],
+                            layerNormals[(int)ChunkMeshLayer.GrassSide], layerColors[(int)ChunkMeshLayer.GrassSide], layerTriangles[(int)ChunkMeshLayer.GrassSide]);
+                        AddFace(face, origin, grassTint, layerVertices[(int)ChunkMeshLayer.GrassOverlay], layerUvs[(int)ChunkMeshLayer.GrassOverlay],
+                            layerNormals[(int)ChunkMeshLayer.GrassOverlay], layerColors[(int)ChunkMeshLayer.GrassOverlay], layerTriangles[(int)ChunkMeshLayer.GrassOverlay]);
+                    }
                     break;
             }
         }
@@ -477,6 +488,7 @@ namespace MineCraftUnity.Rendering
             BlockId.CherryLog => ChunkMeshLayer.CherryLog,
             BlockId.MangroveLog => ChunkMeshLayer.MangroveLog,
             BlockId.PaleOakLog => ChunkMeshLayer.PaleOakLog,
+            BlockId.Snow => ChunkMeshLayer.Snow,
             _ => ChunkMeshLayer.Stone
         };
 
@@ -597,7 +609,8 @@ namespace MineCraftUnity.Rendering
             List<Vector2> uvs,
             List<Vector3> normals,
             List<Color32> colors,
-            List<int> triangles)
+            List<int> triangles,
+            byte metadata = 0)
         {
             var start = vertices.Count;
             GetFaceQuad(face, origin, out var v0, out var v1, out var v2, out var v3);
@@ -608,10 +621,27 @@ namespace MineCraftUnity.Rendering
             vertices.Add(v2);
             vertices.Add(v3);
 
-            uvs.Add(new Vector2(0f, 0f));
-            uvs.Add(new Vector2(1f, 0f));
-            uvs.Add(new Vector2(1f, 1f));
-            uvs.Add(new Vector2(0f, 1f));
+            if (metadata == 1 && (face == BlockFace.North || face == BlockFace.South || face == BlockFace.Up || face == BlockFace.Down))
+            {
+                uvs.Add(new Vector2(0f, 1f));
+                uvs.Add(new Vector2(0f, 0f));
+                uvs.Add(new Vector2(1f, 0f));
+                uvs.Add(new Vector2(1f, 1f));
+            }
+            else if (metadata == 2 && (face == BlockFace.East || face == BlockFace.West))
+            {
+                uvs.Add(new Vector2(0f, 1f));
+                uvs.Add(new Vector2(0f, 0f));
+                uvs.Add(new Vector2(1f, 0f));
+                uvs.Add(new Vector2(1f, 1f));
+            }
+            else
+            {
+                uvs.Add(new Vector2(0f, 0f));
+                uvs.Add(new Vector2(1f, 0f));
+                uvs.Add(new Vector2(1f, 1f));
+                uvs.Add(new Vector2(0f, 1f));
+            }
 
             normals.Add(normal);
             normals.Add(normal);

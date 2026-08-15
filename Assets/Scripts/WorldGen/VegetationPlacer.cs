@@ -1,6 +1,7 @@
 using MineCraftUnity.Blocks;
 using MineCraftUnity.Core;
 using MineCraftUnity.World;
+using MineCraftUnity.WorldGen.Trees;
 
 namespace MineCraftUnity.WorldGen
 {
@@ -9,8 +10,11 @@ namespace MineCraftUnity.WorldGen
     /// </summary>
     public static class VegetationPlacer
     {
-        public static void DecorateChunk(World.Chunk chunk, RandomState randomState)
+        public static void DecorateChunk(Level level, World.Chunk chunk, System.Collections.Generic.HashSet<ChunkPos> changedChunks)
         {
+            var seedValue = Hash01(level.Seed, chunk.Position.X, 0, chunk.Position.Z);
+            var random = new System.Random((int)(seedValue * int.MaxValue));
+
             var baseX = chunk.Position.GetMinBlockX();
             var baseZ = chunk.Position.GetMinBlockZ();
 
@@ -42,14 +46,14 @@ namespace MineCraftUnity.WorldGen
                         continue;
                     }
 
-                    var roll = Hash01(randomState.Seed, worldX, plantY, worldZ);
+                    var roll = Hash01((int)(seedValue * int.MaxValue), worldX, plantY, worldZ);
 
-                    if (TryPlaceTree(chunk, randomState, localX, surfaceY, localZ, biome, roll))
+                    if (TryPlaceTree(level, chunk, random, worldX, surfaceY, worldZ, biome, roll, changedChunks))
                     {
                         continue;
                     }
 
-                    TryPlaceGroundCover(chunk, localX, plantY, localZ, biome, roll, worldX, worldZ, randomState.Seed);
+                    TryPlaceGroundCover(chunk, localX, plantY, localZ, biome, roll, worldX, worldZ, (int)(seedValue * int.MaxValue));
                 }
             }
         }
@@ -149,20 +153,23 @@ namespace MineCraftUnity.WorldGen
         }
 
         private static bool TryPlaceTree(
+            Level level,
             World.Chunk chunk,
-            RandomState randomState,
-            int localX,
+            System.Random random,
+            int worldX,
             int surfaceY,
-            int localZ,
+            int worldZ,
             BiomeId biome,
-            float roll)
+            float roll,
+            System.Collections.Generic.HashSet<ChunkPos> changedChunks)
         {
             var treeChance = biome switch
             {
                 BiomeId.Forest or BiomeId.FlowerForest => 0.025f,
                 BiomeId.DarkForest => 0.04f,
                 BiomeId.BirchForest or BiomeId.OldGrowthBirchForest => 0.028f,
-                BiomeId.Taiga or BiomeId.OldGrowthSpruceTaiga or BiomeId.OldGrowthPineTaiga => 0.022f,
+                BiomeId.Taiga or BiomeId.OldGrowthSpruceTaiga or BiomeId.OldGrowthPineTaiga
+                    or BiomeId.SnowyTaiga or BiomeId.Grove => 0.022f,
                 BiomeId.Plains => 0.004f,
                 BiomeId.Jungle or BiomeId.SparseJungle or BiomeId.BambooJungle => 0.03f,
                 BiomeId.Savanna or BiomeId.SavannaPlateau or BiomeId.WindsweptSavanna => 0.02f,
@@ -177,57 +184,11 @@ namespace MineCraftUnity.WorldGen
                 return false;
             }
 
-            PlaceSimpleTree(chunk, localX, surfaceY + 1, localZ, biome, randomState.Seed);
+            var feature = TreeRegistry.GetTreeFeature(biome);
+            var config = TreeRegistry.GetConfiguration(biome);
+            
+            feature.Place(level, new BlockPos(worldX, surfaceY + 1, worldZ), random, config, changedChunks);
             return true;
-        }
-
-        private static void PlaceSimpleTree(World.Chunk chunk, int localX, int baseY, int localZ, BiomeId biome, int seed)
-        {
-            var height = 4 + (Hash01(seed, localX, baseY, localZ) > 0.5f ? 1 : 0);
-            var leaves = BiomeRegistry.GetLeavesBlock(biome);
-            var log = BiomeRegistry.GetLogBlock(biome);
-
-            for (var dy = 0; dy < height; dy++)
-            {
-                var y = baseY + dy;
-                if (!World.Chunk.IsInside(localX, y, localZ))
-                {
-                    return;
-                }
-
-                if (chunk.GetBlock(localX, y, localZ) == BlockId.Air)
-                {
-                    chunk.SetBlock(localX, y, localZ, log, markDirty: false);
-                }
-            }
-
-            var crownY = baseY + height;
-            for (var dx = -2; dx <= 2; dx++)
-            {
-                for (var dz = -2; dz <= 2; dz++)
-                {
-                    for (var dy = -1; dy <= 2; dy++)
-                    {
-                        if (System.Math.Abs(dx) == 2 && System.Math.Abs(dz) == 2 && dy < 1)
-                        {
-                            continue;
-                        }
-
-                        var lx = localX + dx;
-                        var ly = crownY + dy;
-                        var lz = localZ + dz;
-                        if (!World.Chunk.IsInside(lx, ly, lz))
-                        {
-                            continue;
-                        }
-
-                        if (chunk.GetBlock(lx, ly, lz) == BlockId.Air)
-                        {
-                            chunk.SetBlock(lx, ly, lz, leaves, markDirty: false);
-                        }
-                    }
-                }
-            }
         }
 
         private static float Hash01(int seed, int x, int y, int z)

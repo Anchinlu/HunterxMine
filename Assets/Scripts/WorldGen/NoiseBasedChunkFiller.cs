@@ -13,7 +13,7 @@ namespace MineCraftUnity.WorldGen
     /// </summary>
     public static class NoiseBasedChunkFiller
     {
-        public static void FillChunk(World.Chunk chunk, RandomState randomState)
+        public static void FillChunk(Level level, World.Chunk chunk, RandomState randomState, System.Collections.Generic.HashSet<ChunkPos> changedChunks)
         {
             using (ChunkProfilerMarkers.FillChunk.Auto())
             {
@@ -33,7 +33,7 @@ namespace MineCraftUnity.WorldGen
                     }
                 }
 
-                VegetationPlacer.DecorateChunk(chunk, randomState);
+                VegetationPlacer.DecorateChunk(level, chunk, changedChunks);
                 chunk.FinishBulkFill();
                 chunk.MarkGenerated();
             }

@@ -85,6 +85,7 @@ namespace MineCraftUnity.Rendering
             BlockId.CherryLeaves => ChunkMeshLayer.CherryLeaves,
             BlockId.MangroveLeaves => ChunkMeshLayer.MangroveLeaves,
             BlockId.PaleOakLeaves => ChunkMeshLayer.PaleOakLeaves,
+            BlockId.Snow => ChunkMeshLayer.Snow,
             _ => null
         };
     }

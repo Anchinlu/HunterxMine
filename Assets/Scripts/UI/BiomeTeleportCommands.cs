@@ -45,9 +45,15 @@ namespace MineCraftUnity.UI
                 return false;
             }
 
+            if (!(chunkManager.Generator is OverworldGenerator overworldGen))
+            {
+                response = "Cannot locate biomes in the current world mode.";
+                return false;
+            }
+
             var originX = Mathf.FloorToInt(player.transform.position.x);
             var originZ = Mathf.FloorToInt(player.transform.position.z);
-            var randomState = chunkManager.Generator.RandomState;
+            var randomState = overworldGen.RandomState;
             var result = BiomeLocator.Locate(randomState, biomeId, originX, originZ);
 
             if (!result.Found)

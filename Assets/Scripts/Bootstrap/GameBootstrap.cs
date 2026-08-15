@@ -2,6 +2,8 @@ using System.Collections;
 using MineCraftUnity.Core;
 using MineCraftUnity.Rendering;
 using MineCraftUnity.UI;
+using MineCraftUnity.World;
+using MineCraftUnity.Player;
 using UnityEngine;
 
 namespace MineCraftUnity.Bootstrap
@@ -49,6 +51,12 @@ namespace MineCraftUnity.Bootstrap
             var player = GameObject.Find("Player");
             if (player != null)
             {
+                var playerController = player.GetComponent<PlayerController>();
+                if (playerController != null)
+                {
+                    playerController.enabled = false;
+                }
+
                 manager.SetFollowTarget(player.transform);
                 while (!manager.IsSpawnAreaReady)
                 {
@@ -56,6 +64,11 @@ namespace MineCraftUnity.Bootstrap
                 }
 
                 RepositionPlayerOnSurface(manager, player.transform);
+
+                if (playerController != null)
+                {
+                    playerController.enabled = true;
+                }
             }
         }
 
@@ -85,6 +98,12 @@ namespace MineCraftUnity.Bootstrap
 
         private static void RepositionPlayerOnSurface(ChunkManager manager, Transform player)
         {
+            if (manager.WorldMode == WorldMode.FlatTest)
+            {
+                player.position = new Vector3(0.5f, 65f, 0.5f);
+                return;
+            }
+
             var worldX = Mathf.FloorToInt(player.position.x);
             var worldZ = Mathf.FloorToInt(player.position.z);
 

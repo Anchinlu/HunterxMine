@@ -68,6 +68,8 @@ namespace MineCraftUnity.Rendering
             _materials[(int)ChunkMeshLayer.CherryLeaves] = CreateCutoutMaterial("cherry_leaves/Textures/cherry_leaves.png", Color.white);
             _materials[(int)ChunkMeshLayer.MangroveLeaves] = CreateCutoutMaterial("mangrove_leaves/Textures/mangrove_leaves.png", Color.white);
             _materials[(int)ChunkMeshLayer.PaleOakLeaves] = CreateCutoutMaterial("pale_oak_leaves/Textures/pale_oak_leaves.png", Color.white);
+            _materials[(int)ChunkMeshLayer.Snow] = CreateCubeMaterial("snow/Textures/snow.png");
+            _materials[(int)ChunkMeshLayer.GrassSnowSide] = CreateCubeMaterial("grass_block/Textures/grass_block_snow.png");
             _initialized = true;
         }
 

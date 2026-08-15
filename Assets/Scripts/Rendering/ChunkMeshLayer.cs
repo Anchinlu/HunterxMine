@@ -35,6 +35,8 @@ namespace MineCraftUnity.Rendering
         CherryLeaves = 29,
         MangroveLeaves = 30,
         PaleOakLeaves = 31,
-        Count = 32
+        Snow = 32,
+        GrassSnowSide = 33,
+        Count = 34
     }
 }
