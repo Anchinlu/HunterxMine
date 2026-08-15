@@ -19,6 +19,7 @@ namespace MineCraftUnity.Rendering
         private Mesh _collisionMesh;
 
         public ChunkPos ChunkPosition { get; private set; }
+        public bool HasCollisionMesh => _collisionMesh != null && _collisionMesh.vertexCount > 0;
 
         private void Awake()
         {
@@ -117,16 +118,9 @@ namespace MineCraftUnity.Rendering
                 return;
             }
 
-            if (enabled && _collisionMesh != null && _collisionMesh.vertexCount > 0)
+            if (enabled && HasCollisionMesh)
             {
                 _meshCollider.sharedMesh = _collisionMesh;
-                _meshCollider.enabled = true;
-                return;
-            }
-
-            if (enabled && _mesh != null && _mesh.vertexCount > 0 && (_collisionMesh == null || _collisionMesh.vertexCount == 0))
-            {
-                _meshCollider.sharedMesh = _mesh;
                 _meshCollider.enabled = true;
                 return;
             }

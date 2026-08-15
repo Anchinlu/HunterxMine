@@ -105,8 +105,8 @@ namespace MineCraftUnity.Rendering
             }
             _fluidSimulator = new FluidSimulator(_level);
             WireLevelEvents();
-            _generationWorker ??= new ChunkGenerationWorker(WorldConstants.MaxParallelChunkWorkers);
-            _meshWorker ??= new ChunkMeshWorker(WorldConstants.MaxParallelChunkWorkers);
+            _generationWorker ??= new ChunkGenerationWorker(WorldConstants.MaxGenerationWorkers);
+            _meshWorker ??= new ChunkMeshWorker(WorldConstants.MaxMeshWorkers);
         }
 
         private void WireLevelEvents()
@@ -128,6 +128,7 @@ namespace MineCraftUnity.Rendering
         private void Awake()
         {
             BiomeRegistry.EnsureLoaded();
+            BiomeColorMap.PreloadOnMainThread();
             EnsureInitialized();
             BlockMaterialLibrary.EnsureInitialized();
         }
@@ -175,7 +176,7 @@ namespace MineCraftUnity.Rendering
 
             var center = GetCenterChunkPos();
             _priorityCenter = center;
-            var radius = Mathf.Max(collisionDistance, WorldConstants.SpawnPriorityRadius);
+            var radius = viewDistance;
 
             _spawnChunks.Clear();
             _failedRetries.Clear();
@@ -193,7 +194,7 @@ namespace MineCraftUnity.Rendering
             SortPendingWork(center);
             var total = _spawnChunks.Count;
 
-            WorldLoadingOverlay.Show("Generating world…");
+            WorldLoadingOverlay.Show($"Loading world: 0 / {total} chunks");
             WorldLoadingOverlay.SetProgress(0f);
 
             float startTime = Time.realtimeSinceStartup;
@@ -202,22 +203,23 @@ namespace MineCraftUnity.Rendering
 
             try
             {
-                while (!AreAllSpawnChunksReady())
+                while (!AreAllInitialViewChunksReady())
                 {
-                    var ready = CountReadySpawnChunks();
+                    var ready = CountReadyInitialViewChunks();
                     if (ready > lastReadyCount)
                     {
                         lastReadyCount = ready;
                         lastProgressTime = Time.realtimeSinceStartup;
                     }
 
+                    WorldLoadingOverlay.Show($"Loading world: {ready} / {total} chunks");
                     WorldLoadingOverlay.SetProgress(total > 0 ? (float)ready / total : 1f);
 
                     float currentTime = Time.realtimeSinceStartup;
-                    if (currentTime - startTime > 15f || currentTime - lastProgressTime > 5f)
+                    if (currentTime - lastProgressTime > 15f)
                     {
-                        UnityEngine.Debug.LogWarning($"Spawn area loading timed out (Total time: {currentTime - startTime:F1}s, Idle: {currentTime - lastProgressTime:F1}s). Proceeding to gameplay.");
-                        break;
+                        UnityEngine.Debug.LogWarning($"Loading is taking long (Total time: {currentTime - startTime:F1}s, Idle: {currentTime - lastProgressTime:F1}s). Waiting...");
+                        lastProgressTime = currentTime; // Reset warning timer
                     }
 
                     yield return null;
@@ -311,6 +313,14 @@ namespace MineCraftUnity.Rendering
             }
 
             retry.Count++;
+            if (retry.Count >= 3)
+            {
+                UnityEngine.Debug.LogError($"[ChunkManager] Chunk {pos} failed 3 times. Giving up.");
+                _failedRetries.Remove(pos);
+                _neededChunks.Remove(pos);
+                return;
+            }
+
             float backoff = 0.25f * Mathf.Pow(2, Mathf.Min(retry.Count - 1, 3));
             retry.NextRetryTime = Time.time + backoff;
             
@@ -401,7 +411,7 @@ namespace MineCraftUnity.Rendering
             EnsureInitialized();
             var center = GetCenterChunkPos();
             _priorityCenter = center;
-            var radius = Mathf.Max(collisionDistance, WorldConstants.SpawnPriorityRadius);
+            var radius = viewDistance;
 
             for (var dx = -radius; dx <= radius; dx++)
             {
@@ -990,6 +1000,15 @@ namespace MineCraftUnity.Rendering
         private void RequestCollisionState(ChunkPos pos, bool enable)
         {
             _collisionDesired[pos] = enable;
+
+            if (enable && _renderers.TryGetValue(pos, out var renderer) && !renderer.HasCollisionMesh)
+            {
+                if (_level.TryGetChunk(pos, out var chunk))
+                {
+                    ScheduleMesh(pos);
+                }
+            }
+
             if (_collisionApplied.TryGetValue(pos, out var applied) && applied == enable)
             {
                 return;
@@ -1003,6 +1022,11 @@ namespace MineCraftUnity.Rendering
 
         private void ProcessCollisionQueue()
         {
+            if (!IsSpawnAreaReady)
+            {
+                return;
+            }
+
             if (_collisionQueue.Count == 0)
             {
                 return;
@@ -1038,6 +1062,22 @@ namespace MineCraftUnity.Rendering
             }
         }
 
+        public bool ForceApplyCollision(ChunkPos pos)
+        {
+            if (_renderers.TryGetValue(pos, out var renderer))
+            {
+                if (renderer.HasCollisionMesh)
+                {
+                    renderer.SetCollisionEnabled(true);
+                    _collisionApplied[pos] = true;
+                    return true;
+                }
+
+                RequestCollisionState(pos, true);
+            }
+            return false;
+        }
+
         private void ClearPendingQueues()
         {
             _generationList.Clear();
@@ -1067,45 +1107,48 @@ namespace MineCraftUnity.Rendering
             }
         }
 
-        private bool IsSpawnChunkReady(ChunkPos pos)
+
+        private int CountReadyInitialViewChunks()
         {
-            if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
-            {
-                return false;
-            }
-
-            if (chunk.IsMeshDirty || !_renderers.ContainsKey(pos))
-            {
-                return false;
-            }
-
-            return true;
-        }
-
-        private int CountReadySpawnChunks()
-        {
-            var ready = 0;
+            int count = 0;
             foreach (var pos in _spawnChunks)
             {
-                if (IsSpawnChunkReady(pos))
+                if (_level.TryGetChunk(pos, out var chunk) && chunk.IsGenerated)
                 {
-                    ready++;
+                    if (!chunk.IsMeshDirty && _renderers.ContainsKey(pos))
+                    {
+                        if (!_generationList.Contains(pos) && !_generationScheduled.Contains(pos) &&
+                            !_meshList.Contains(pos) && !_meshScheduled.Contains(pos) && !_meshInFlight.Contains(pos))
+                        {
+                            count++;
+                        }
+                    }
                 }
             }
-
-            return ready;
+            return count;
         }
 
-        private bool AreAllSpawnChunksReady()
+        private bool AreAllInitialViewChunksReady()
         {
             foreach (var pos in _spawnChunks)
             {
-                if (!IsSpawnChunkReady(pos))
+                if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+                {
+                    return false;
+                }
+
+                if (chunk.IsMeshDirty || !_renderers.ContainsKey(pos))
+                {
+                    return false;
+                }
+                
+                // Ensure no tasks are still in flight
+                if (_generationList.Contains(pos) || _generationScheduled.Contains(pos) ||
+                    _meshList.Contains(pos) || _meshScheduled.Contains(pos) || _meshInFlight.Contains(pos))
                 {
                     return false;
                 }
             }
-
             return _spawnChunks.Count > 0;
         }
 

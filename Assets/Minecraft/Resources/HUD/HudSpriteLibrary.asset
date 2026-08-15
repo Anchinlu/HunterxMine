@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9f22c8ceedeb1724c8d4e04dccaad2eb, type: 3}
+  m_Name: HudSpriteLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::MineCraftUnity.UI.HudSpriteLibrary
+  Crosshair: {fileID: 21300000, guid: c265fdb3d85bfe647b504a6656edf8d9, type: 3}
+  Hotbar: {fileID: 21300000, guid: 7486a97406f053e4abb4b4a92db52168, type: 3}
+  HotbarSelection: {fileID: 21300000, guid: bcba1590b9c0c3641859fdd9892622d4, type: 3}
+  HeartContainer: {fileID: 21300000, guid: d00f74a86657f9841ab105c93c41a679, type: 3}
+  HeartFull: {fileID: 21300000, guid: f18d68ff9791422459af75912c3a76e4, type: 3}
+  HeartHalf: {fileID: 21300000, guid: c7464c061c2058241890fca7d4035504, type: 3}
+  FoodEmpty: {fileID: 21300000, guid: 875e8ccb787753b4aae16906843b18a4, type: 3}
+  FoodHalf: {fileID: 21300000, guid: 93461228637c24240ad465881f8a3486, type: 3}
+  FoodFull: {fileID: 21300000, guid: f50b6a8e8a697be4a829ebbf17be08d8, type: 3}
+  ArmorEmpty: {fileID: 21300000, guid: d2de33e390d0a90478cab2374a8874ca, type: 3}
+  ArmorHalf: {fileID: 21300000, guid: 4c711d0e9ef51374bbb5a4bfcd3b5c5d, type: 3}
+  ArmorFull: {fileID: 21300000, guid: 883029ad22a624346a3103cfaa39cf7c, type: 3}
+  ExperienceBarBackground: {fileID: 21300000, guid: a903875fe09ea09498fd6c820f6f56dd, type: 3}
+  ExperienceBarProgress: {fileID: 21300000, guid: f543b4c43b0c33d43b44875fe6bd2cd6, type: 3}

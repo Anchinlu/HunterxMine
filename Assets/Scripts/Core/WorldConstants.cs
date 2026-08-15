@@ -32,13 +32,16 @@ namespace MineCraftUnity.Core
         public const int MaxChunkMeshesPerFrame = 2;
 
         /// <summary>Higher mesh-apply cap while spawn overlay is active (GPU upload only).</summary>
-        public const int MaxSpawnChunkMeshesPerFrame = 4;
+        public const int MaxSpawnChunkMeshesPerFrame = 3;
 
         /// <summary>Extra blocks scanned above surface hint for overhangs (Phase 2 tuning).</summary>
         public const int SurfaceOverhangMargin = 20;
 
-        /// <summary>Parallel chunk workers (generation + mesh compute).</summary>
-        public static int MaxParallelChunkWorkers => Math.Max(1, Environment.ProcessorCount - 1);
+        /// <summary>Parallel chunk workers for generation.</summary>
+        public static int MaxGenerationWorkers => Math.Clamp(Environment.ProcessorCount / 4, 3, 4);
+
+        /// <summary>Parallel chunk workers for mesh compute.</summary>
+        public static int MaxMeshWorkers => Math.Clamp(Environment.ProcessorCount / 4, 3, 4);
 
         /// <summary>Max physics mesh cooks per frame (MeshCollider.sharedMesh is very expensive).</summary>
         public const int MaxCollisionUpdatesPerFrame = 1;

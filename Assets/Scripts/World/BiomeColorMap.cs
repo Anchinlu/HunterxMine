@@ -15,7 +15,7 @@ namespace MineCraftUnity.World
 
         private static bool _initialized;
 
-        public static void EnsureInitialized()
+        public static void PreloadOnMainThread()
         {
             if (_initialized) return;
 
@@ -48,13 +48,11 @@ namespace MineCraftUnity.World
 
         public static Color GetGrassColor(float temperature, float downfall)
         {
-            EnsureInitialized();
             return SampleColor(_grassMap, _grassWidth, _grassHeight, temperature, downfall);
         }
 
         public static Color GetFoliageColor(float temperature, float downfall)
         {
-            EnsureInitialized();
             return SampleColor(_foliageMap, _foliageWidth, _foliageHeight, temperature, downfall);
         }
 

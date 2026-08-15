@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using MineCraftUnity.WorldGen;
@@ -11,21 +12,24 @@ namespace MineCraftUnity.World
     /// </summary>
     public static class BiomeDatapackLoader
     {
-        private static readonly Dictionary<BiomeId, BiomeDefinition> Definitions = new();
+        private static readonly ConcurrentDictionary<BiomeId, BiomeDefinition> Definitions = new();
         private static bool _loaded;
+        private static readonly object _loadLock = new();
 
         public static bool IsLoaded => _loaded;
 
         public static void EnsureLoaded()
         {
-            if (_loaded)
-            {
-                return;
-            }
+            if (_loaded) return;
 
-            LoadFromDirectory(WorldGenDataPaths.BiomeDirectory);
-            ApplyAliasDefaults();
-            _loaded = true;
+            lock (_loadLock)
+            {
+                if (_loaded) return;
+
+                LoadFromDirectory(WorldGenDataPaths.BiomeDirectory);
+                ApplyAliasDefaults();
+                _loaded = true;
+            }
         }
 
         public static bool TryGetDefinition(BiomeId id, out BiomeDefinition definition) =>

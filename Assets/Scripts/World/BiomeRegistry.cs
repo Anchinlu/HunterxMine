@@ -20,7 +20,6 @@ namespace MineCraftUnity.World
         public static void EnsureLoaded()
         {
             BiomeDatapackLoader.EnsureLoaded();
-            BiomeColorMap.EnsureInitialized();
         }
 
         public static string GetDisplayName(BiomeId id) =>

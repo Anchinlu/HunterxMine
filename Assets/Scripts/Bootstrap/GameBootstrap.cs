@@ -17,6 +17,10 @@ namespace MineCraftUnity.Bootstrap
         [SerializeField] private int worldSeed = 12345;
         [SerializeField] private int viewDistance = WorldConstants.DefaultViewDistance;
 
+        [Header("HUD")]
+        [Tooltip("Kéo PlayerHud Prefab vào đây. Nếu để trống, sẽ tìm trong Scene hoặc tự tạo mới.")]
+        [SerializeField] private PlayerHud hudPrefab;
+
         private void Awake()
         {
             RemoveLegacyGround();
@@ -49,12 +53,49 @@ namespace MineCraftUnity.Bootstrap
             EnsurePerformanceBaseline(manager.gameObject);
 
             var player = GameObject.Find("Player");
+            GameObject hudObj = null;
+
             if (player != null)
             {
                 var playerController = player.GetComponent<PlayerController>();
                 if (playerController != null)
                 {
                     playerController.enabled = false;
+                }
+
+                var stats = player.GetComponent<MineCraftUnity.Player.PlayerStats>();
+                if (stats == null) stats = player.AddComponent<MineCraftUnity.Player.PlayerStats>();
+                
+                var inventory = player.GetComponent<MineCraftUnity.Player.PlayerInventory>();
+                if (inventory == null) inventory = player.AddComponent<MineCraftUnity.Player.PlayerInventory>();
+
+                // Priority: 1) Prefab  2) Already in Scene  3) Auto-create
+                PlayerHud hud = null;
+                if (hudPrefab != null)
+                {
+                    hud = Instantiate(hudPrefab);
+                    hud.name = "PlayerHud";
+                    hudObj = hud.gameObject;
+                }
+                else
+                {
+                    hud = FindFirstObjectByType<PlayerHud>();
+                    if (hud != null)
+                    {
+                        hudObj = hud.gameObject;
+                    }
+                    else
+                    {
+                        hudObj = new GameObject("PlayerHud");
+                        hud = hudObj.AddComponent<PlayerHud>();
+                    }
+                }
+
+                hudObj.SetActive(false); // Hide until world is ready
+                var library = Resources.Load<MineCraftUnity.UI.HudSpriteLibrary>("HUD/HudSpriteLibrary");
+                if (library != null)
+                {
+                    hud.Initialize(library, stats, inventory);
                 }
 
                 manager.SetFollowTarget(player.transform);
@@ -65,9 +106,20 @@ namespace MineCraftUnity.Bootstrap
 
                 RepositionPlayerOnSurface(manager, player.transform);
 
+                var playerChunkPos = new ChunkPos(Mathf.FloorToInt(player.transform.position.x) >> 4, Mathf.FloorToInt(player.transform.position.z) >> 4);
+                while (!manager.ForceApplyCollision(playerChunkPos))
+                {
+                    yield return null;
+                }
+
                 if (playerController != null)
                 {
                     playerController.enabled = true;
+                }
+
+                if (hudObj != null)
+                {
+                    hudObj.SetActive(true);
                 }
             }
         }
