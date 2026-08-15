@@ -1,3 +1,4 @@
+using MineCraftUnity.World;
 using System.Collections.Generic;
 using MineCraftUnity.Blocks;
 using MineCraftUnity.Core;
@@ -6,15 +7,16 @@ namespace MineCraftUnity.World
 {
     public class FlatTestGenerator : IChunkGenerator
     {
-        public void GenerateChunk(Level level, Chunk chunk, HashSet<ChunkPos> changedChunks)
+        public ChunkGenerationData ComputeChunkData(ChunkPos pos)
         {
+            var data = new ChunkGenerationData(pos);
             for (int qx = 0; qx < WorldConstants.BiomeQuartCountXZ; qx++)
             {
                 for (int qy = 0; qy < WorldConstants.BiomeQuartCountY; qy++)
                 {
                     for (int qz = 0; qz < WorldConstants.BiomeQuartCountXZ; qz++)
                     {
-                        chunk.SetQuartBiome(qx, qy, qz, BiomeId.Plains);
+                        data.SetQuartBiome(qx, qy, qz, BiomeId.Plains);
                     }
                 }
             }
@@ -27,20 +29,21 @@ namespace MineCraftUnity.World
                     {
                         if (y == 59)
                         {
-                            chunk.SetBlock(x, y, z, BlockId.Bedrock);
+                            data.SetBlock(x, y, z, BlockId.Bedrock);
                         }
                         else if (y >= 60 && y <= 62)
                         {
-                            chunk.SetBlock(x, y, z, BlockId.Dirt);
+                            data.SetBlock(x, y, z, BlockId.Dirt);
                         }
                         else if (y == 63)
                         {
-                            chunk.SetBlock(x, y, z, BlockId.GrassBlock);
+                            data.SetBlock(x, y, z, BlockId.GrassBlock);
                         }
                     }
                 }
             }
-            chunk.MarkGenerated();
+            
+            return data;
         }
 
         public int SampleSurfaceHeight(int globalX, int globalZ)
@@ -54,3 +57,4 @@ namespace MineCraftUnity.World
         }
     }
 }
+

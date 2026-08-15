@@ -1,3 +1,4 @@
+using MineCraftUnity.World;
 using MineCraftUnity.Core;
 using MineCraftUnity.WorldGen;
 using MineCraftUnity.WorldGen.Density;
@@ -9,10 +10,10 @@ namespace MineCraftUnity.WorldGen
     /// </summary>
     public static class BiomeVolumeFiller
     {
-        public static void FillChunkBiomes(World.Chunk chunk, RandomState randomState)
+        public static void FillChunkBiomes(ChunkGenerationData data, RandomState randomState)
         {
-            var baseX = chunk.Position.GetMinBlockX();
-            var baseZ = chunk.Position.GetMinBlockZ();
+            var baseX = data.Position.GetMinBlockX();
+            var baseZ = data.Position.GetMinBlockZ();
 
             for (var quartX = 0; quartX < WorldConstants.BiomeQuartCountXZ; quartX++)
             {
@@ -26,10 +27,11 @@ namespace MineCraftUnity.WorldGen
                     {
                         var blockY = WorldConstants.MinY + (quartY << 2) + 2;
                         var climate = randomState.SampleClimate(worldX, blockY, worldZ, columnCache);
-                        chunk.SetQuartBiome(quartX, quartY, quartZ, OverworldBiomeResolver.Resolve(climate));
+                        data.SetQuartBiome(quartX, quartY, quartZ, OverworldBiomeResolver.Resolve(climate));
                     }
                 }
             }
         }
     }
 }
+

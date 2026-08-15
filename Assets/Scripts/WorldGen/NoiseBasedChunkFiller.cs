@@ -8,19 +8,20 @@ using MineCraftUnity.WorldGen.Density;
 namespace MineCraftUnity.WorldGen
 {
     /// <summary>
-    /// MC ref: NoiseBasedChunkGenerator.doFill — sloped cheese &gt; 0 = stone, then surface rules.
+    /// MC ref: NoiseBasedChunkGenerator.doFill — sloped cheese > 0 = stone, then surface rules.
     /// Uses terrain density (sloped cheese) for fill — faster and stable; cave carvers come later.
     /// </summary>
     public static class NoiseBasedChunkFiller
     {
-        public static void FillChunk(Level level, World.Chunk chunk, RandomState randomState, System.Collections.Generic.HashSet<ChunkPos> changedChunks)
+        public static ChunkGenerationData ComputeChunkData(ChunkPos pos, RandomState randomState)
         {
+            var data = new ChunkGenerationData(pos);
             using (ChunkProfilerMarkers.FillChunk.Auto())
             {
-                var baseX = chunk.Position.GetMinBlockX();
-                var baseZ = chunk.Position.GetMinBlockZ();
+                var baseX = data.Position.GetMinBlockX();
+                var baseZ = data.Position.GetMinBlockZ();
 
-                BiomeVolumeFiller.FillChunkBiomes(chunk, randomState);
+                BiomeVolumeFiller.FillChunkBiomes(data, randomState);
 
                 for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
                 {
@@ -29,18 +30,17 @@ namespace MineCraftUnity.WorldGen
                         var worldX = baseX + localX;
                         var worldZ = baseZ + localZ;
                         var columnCache = new DensityEvaluationCache(worldX, worldZ);
-                        FillAndSurfaceColumn(chunk, randomState, columnCache, localX, localZ, worldX, worldZ);
+                        FillAndSurfaceColumn(data, randomState, columnCache, localX, localZ, worldX, worldZ);
                     }
                 }
 
-                VegetationPlacer.DecorateChunk(level, chunk, changedChunks);
-                chunk.FinishBulkFill();
-                chunk.MarkGenerated();
+                VegetationPlacer.DecorateChunk(data);
             }
+            return data;
         }
 
         private static void FillAndSurfaceColumn(
-            World.Chunk chunk,
+            ChunkGenerationData data,
             RandomState randomState,
             DensityEvaluationCache columnCache,
             int localX,
@@ -61,7 +61,7 @@ namespace MineCraftUnity.WorldGen
                 var density = randomState.SampleTerrainDensity(worldX, y, worldZ, columnCache);
                 if (density > 0.0)
                 {
-                    chunk.SetBlock(localX, y, localZ, BlockId.Stone, markDirty: false);
+                    data.SetBlock(localX, y, localZ, BlockId.Stone);
                     topSolid = y;
                     consecutiveAirAboveSolid = 0;
                     continue;
@@ -78,15 +78,15 @@ namespace MineCraftUnity.WorldGen
 
                 if (y <= WorldConstants.SeaLevel && y > bedrockTop)
                 {
-                    chunk.SetWater(localX, y, localZ, FluidLevel.Source, markDirty: false);
+                    data.SetBlock(localX, y, localZ, BlockId.Water);
                 }
             }
 
-            ApplySurfaceForColumn(chunk, randomState, columnCache, localX, localZ, worldX, worldZ, topSolid);
+            ApplySurfaceForColumn(data, randomState, columnCache, localX, localZ, worldX, worldZ, topSolid);
         }
 
         private static void ApplySurfaceForColumn(
-            World.Chunk chunk,
+            ChunkGenerationData data,
             RandomState randomState,
             DensityEvaluationCache columnCache,
             int localX,
@@ -98,14 +98,14 @@ namespace MineCraftUnity.WorldGen
             var bedrockTop = WorldConstants.MinY + WorldConstants.BedrockLayers - 1;
             for (var y = WorldConstants.MinY; y <= bedrockTop; y++)
             {
-                chunk.SetBlock(localX, y, localZ, BlockId.Bedrock, markDirty: false);
+                data.SetBlock(localX, y, localZ, BlockId.Bedrock);
             }
 
             for (var y = bedrockTop + 1; y <= WorldConstants.SeaLevel; y++)
             {
-                if (chunk.GetBlock(localX, y, localZ) == BlockId.Air)
+                if (data.GetBlock(localX, y, localZ) == BlockId.Air)
                 {
-                    chunk.SetWater(localX, y, localZ, FluidLevel.Source, markDirty: false);
+                    data.SetBlock(localX, y, localZ, BlockId.Water);
                 }
             }
 
@@ -114,7 +114,7 @@ namespace MineCraftUnity.WorldGen
                 return;
             }
 
-            var biome = chunk.GetBiome(localX, topSolid, localZ);
+            var biome = data.GetBiome(localX, topSolid, localZ);
             var surfaceContext = new SurfaceRuleApplier.ColumnContext(
                 worldX, worldZ, topSolid, biome);
             var surfaceStart = SurfaceRuleApplier.GetSurfaceLayerStart(surfaceContext, topSolid, bedrockTop);
@@ -127,7 +127,7 @@ namespace MineCraftUnity.WorldGen
                     continue;
                 }
 
-                chunk.SetBlock(localX, y, localZ, block, markDirty: false);
+                data.SetBlock(localX, y, localZ, block);
             }
         }
 

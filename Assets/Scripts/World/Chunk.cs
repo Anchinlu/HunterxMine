@@ -16,6 +16,7 @@ namespace MineCraftUnity.World
         private readonly BiomeId[] _quartBiomes = new BiomeId[WorldConstants.BiomeQuartVolume];
         public bool IsGenerated { get; private set; }
         public bool IsMeshDirty { get; set; } = true;
+        public int Revision { get; private set; }
 
         public int MinFilledY { get; private set; } = WorldConstants.MaxY;
         public int MaxFilledY { get; private set; } = WorldConstants.MinY;
@@ -26,6 +27,65 @@ namespace MineCraftUnity.World
         }
 
         public void MarkGenerated() => IsGenerated = true;
+
+        public void ApplyData(ChunkGenerationData data)
+        {
+            Array.Copy(data.Blocks, _blocks, _blocks.Length);
+            Array.Copy(data.Metadata, _metadata, _metadata.Length);
+            Array.Copy(data.FluidLevels, _fluidLevels, _fluidLevels.Length);
+            Array.Copy(data.QuartBiomes, _quartBiomes, _quartBiomes.Length);
+            
+            MinFilledY = data.MinFilledY;
+            MaxFilledY = data.MaxFilledY;
+            IsMeshDirty = true;
+            Revision++;
+        }
+
+        public void CopyToArrays(BlockId[] blocks, byte[] metadata, byte[] fluid, BiomeId[] biomes)
+        {
+            lock (this) {
+                Array.Copy(_blocks, blocks, _blocks.Length);
+                Array.Copy(_metadata, metadata, _metadata.Length);
+                Array.Copy(_fluidLevels, fluid, _fluidLevels.Length);
+                if (biomes != null)
+                {
+                    Array.Copy(_quartBiomes, biomes, _quartBiomes.Length);
+                }
+            }
+        }
+
+        public void CopyZSliceToArrays(int localZ, BlockId[] blocks, byte[] metadata, byte[] fluid)
+        {
+            lock (this) {
+                for (int y = MinFilledY; y <= MaxFilledY; y++)
+                {
+                    int srcIdx = ToIndex(0, y, localZ);
+                    int yIdx = y - WorldConstants.MinY;
+                    int dstIdx = yIdx * WorldConstants.ChunkSize;
+                    Array.Copy(_blocks, srcIdx, blocks, dstIdx, WorldConstants.ChunkSize);
+                    Array.Copy(_metadata, srcIdx, metadata, dstIdx, WorldConstants.ChunkSize);
+                    Array.Copy(_fluidLevels, srcIdx, fluid, dstIdx, WorldConstants.ChunkSize);
+                }
+            }
+        }
+
+        public void CopyXSliceToArrays(int localX, BlockId[] blocks, byte[] metadata, byte[] fluid)
+        {
+            lock (this) {
+                for (int y = MinFilledY; y <= MaxFilledY; y++)
+                {
+                    int yIdx = y - WorldConstants.MinY;
+                    for (int z = 0; z < WorldConstants.ChunkSize; z++)
+                    {
+                        int srcIdx = ToIndex(localX, y, z);
+                        int dstIdx = yIdx * WorldConstants.ChunkSize + z;
+                        blocks[dstIdx] = _blocks[srcIdx];
+                        metadata[dstIdx] = _metadata[srcIdx];
+                        fluid[dstIdx] = _fluidLevels[srcIdx];
+                    }
+                }
+            }
+        }
 
         public BlockId GetBlock(int localX, int y, int localZ)
         {
@@ -81,6 +141,7 @@ namespace MineCraftUnity.World
             if (markDirty)
             {
                 IsMeshDirty = true;
+                Revision++;
             }
         }
 
@@ -95,6 +156,7 @@ namespace MineCraftUnity.World
             if (markDirty)
             {
                 IsMeshDirty = true;
+                Revision++;
             }
         }
 
@@ -113,12 +175,14 @@ namespace MineCraftUnity.World
             if (markDirty)
             {
                 IsMeshDirty = true;
+                Revision++;
             }
         }
 
         public void FinishBulkFill()
         {
             IsMeshDirty = true;
+            Revision++;
         }
 
         public BiomeId GetBiome(int localX, int y, int localZ)

@@ -16,12 +16,14 @@ namespace MineCraftUnity.Rendering
         public bool Success { get; }
         public bool WasSkipped { get; }
         public string ErrorMessage { get; }
+        public int Revision { get; }
 
-        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision, bool success = true, bool wasSkipped = false, string errorMessage = null)
+        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision, int revision, bool success = true, bool wasSkipped = false, string errorMessage = null)
         {
             Position = position;
             Data = data;
             WithCollision = withCollision;
+            Revision = revision;
             Success = success;
             WasSkipped = wasSkipped;
             ErrorMessage = errorMessage;
@@ -52,10 +54,27 @@ namespace MineCraftUnity.Rendering
             object worldLock,
             Func<ChunkPos, bool> isStillNeeded)
         {
+            ChunkMeshSnapshot snapshot = null;
+            lock (worldLock)
+            {
+                if (level.TryGetChunk(pos, out var chunk) && chunk.IsGenerated)
+                {
+                    snapshot = new ChunkMeshSnapshot(level, chunk);
+                }
+            }
+
+            if (snapshot == null)
+            {
+                _completed.Enqueue(new ChunkMeshResult(pos, null, withCollision, 0, true, true, null));
+                return true; // Skipping gracefully if chunk doesn't exist
+            }
+
             if (!_parallelLimit.Wait(0))
             {
                 return false;
             }
+
+            int snapshotRevision = snapshot.Revision;
 
             Task.Run(() =>
             {
@@ -67,20 +86,9 @@ namespace MineCraftUnity.Rendering
                 {
                     if (isStillNeeded(pos))
                     {
-                        Chunk chunk;
-                        lock (worldLock)
+                        using (ChunkProfilerMarkers.MeshBuildInto.Auto())
                         {
-                            if (level.TryGetChunk(pos, out chunk) && chunk.IsGenerated)
-                            {
-                                using (ChunkProfilerMarkers.MeshBuildInto.Auto())
-                                {
-                                    data = ChunkMeshBuilder.ComputeMeshData(chunk, level);
-                                }
-                            }
-                            else
-                            {
-                                wasSkipped = true;
-                            }
+                            data = ChunkMeshBuilder.ComputeMeshData(snapshot);
                         }
                     }
                     else
@@ -95,7 +103,7 @@ namespace MineCraftUnity.Rendering
                 }
                 finally
                 {
-                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision, success, wasSkipped, errorMessage));
+                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision, snapshotRevision, success, wasSkipped, errorMessage));
                     _parallelLimit.Release();
                 }
             });

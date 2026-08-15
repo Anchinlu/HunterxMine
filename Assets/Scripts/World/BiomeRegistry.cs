@@ -1,4 +1,5 @@
 using MineCraftUnity.Blocks;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -12,8 +13,9 @@ namespace MineCraftUnity.World
         private static readonly Color DefaultGrassColor = BiomeJsonParser.ParseHexColor("#79c05a");
         private static readonly Color DefaultWaterColor = BiomeJsonParser.ParseHexColor("#3f76e4");
         
-        private static readonly Dictionary<BiomeId, Color> _grassCache = new();
-        private static readonly Dictionary<BiomeId, Color> _foliageCache = new();
+        private static readonly ConcurrentDictionary<BiomeId, Color> _grassCache = new();
+        private static readonly ConcurrentDictionary<BiomeId, Color> _foliageCache = new();
+        private static readonly ConcurrentDictionary<BiomeId, Color> _waterCache = new();
 
         public static void EnsureLoaded()
         {

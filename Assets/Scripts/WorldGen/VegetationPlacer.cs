@@ -10,59 +10,59 @@ namespace MineCraftUnity.WorldGen
     /// </summary>
     public static class VegetationPlacer
     {
-        public static void DecorateChunk(Level level, World.Chunk chunk, System.Collections.Generic.HashSet<ChunkPos> changedChunks)
+        public static void DecorateChunk(ChunkGenerationData data)
         {
-            var seedValue = Hash01(level.Seed, chunk.Position.X, 0, chunk.Position.Z);
+            var seedValue = Hash01(0, data.Position.X, 0, data.Position.Z);
             var random = new System.Random((int)(seedValue * int.MaxValue));
 
-            var baseX = chunk.Position.GetMinBlockX();
-            var baseZ = chunk.Position.GetMinBlockZ();
+            var baseX = data.Position.GetMinBlockX();
+            var baseZ = data.Position.GetMinBlockZ();
 
             for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
             {
                 for (var localZ = 0; localZ < WorldConstants.ChunkSize; localZ++)
                 {
-                    if (!TryFindPlantSurface(chunk, localX, localZ, out var surfaceY))
+                    if (!TryFindPlantSurface(data, localX, localZ, out var surfaceY))
                     {
                         continue;
                     }
 
                     var worldX = baseX + localX;
                     var worldZ = baseZ + localZ;
-                    var biome = chunk.GetBiome(localX, surfaceY, localZ);
+                    var biome = data.GetBiome(localX, surfaceY, localZ);
                     if (!BiomeRegistry.SupportsSurfaceVegetation(biome))
                     {
                         continue;
                     }
 
-                    if (chunk.GetBlock(localX, surfaceY, localZ) != BlockId.GrassBlock)
+                    if (data.GetBlock(localX, surfaceY, localZ) != BlockId.GrassBlock)
                     {
                         continue;
                     }
 
                     var plantY = surfaceY + 1;
-                    if (chunk.GetBlock(localX, plantY, localZ) != BlockId.Air)
+                    if (data.GetBlock(localX, plantY, localZ) != BlockId.Air)
                     {
                         continue;
                     }
 
                     var roll = Hash01((int)(seedValue * int.MaxValue), worldX, plantY, worldZ);
 
-                    if (TryPlaceTree(level, chunk, random, worldX, surfaceY, worldZ, biome, roll, changedChunks))
+                    if (TryPlaceTree(data, random, worldX, surfaceY, worldZ, biome, roll))
                     {
                         continue;
                     }
 
-                    TryPlaceGroundCover(chunk, localX, plantY, localZ, biome, roll, worldX, worldZ, (int)(seedValue * int.MaxValue));
+                    TryPlaceGroundCover(data, localX, plantY, localZ, biome, roll, worldX, worldZ, (int)(seedValue * int.MaxValue));
                 }
             }
         }
 
-        private static bool TryFindPlantSurface(World.Chunk chunk, int localX, int localZ, out int surfaceY)
+        private static bool TryFindPlantSurface(ChunkGenerationData data, int localX, int localZ, out int surfaceY)
         {
-            for (var y = chunk.MaxFilledY; y >= chunk.MinFilledY; y--)
+            for (var y = data.MaxFilledY; y >= data.MinFilledY; y--)
             {
-                var block = chunk.GetBlock(localX, y, localZ);
+                var block = data.GetBlock(localX, y, localZ);
                 if (block == BlockId.Air || BlockRegistry.IsFluid(block))
                 {
                     continue;
@@ -77,7 +77,7 @@ namespace MineCraftUnity.WorldGen
         }
 
         private static void TryPlaceGroundCover(
-            World.Chunk chunk,
+            ChunkGenerationData data,
             int localX,
             int plantY,
             int localZ,
@@ -91,14 +91,14 @@ namespace MineCraftUnity.WorldGen
             {
                 if (roll < 0.18f)
                 {
-                    chunk.SetBlock(localX, plantY, localZ, BlockId.Fern, markDirty: false);
+                    data.SetBlock(localX, plantY, localZ, BlockId.Fern);
                 }
 
                 return;
             }
 
             var flowerRoll = Hash01(seed, worldX + 17, plantY, worldZ + 31);
-            if (TryPlaceFlower(chunk, localX, plantY, localZ, biome, flowerRoll, seed, worldX, worldZ))
+            if (TryPlaceFlower(data, localX, plantY, localZ, biome, flowerRoll, seed, worldX, worldZ))
             {
                 return;
             }
@@ -114,12 +114,12 @@ namespace MineCraftUnity.WorldGen
 
             if (roll < grassChance)
             {
-                chunk.SetBlock(localX, plantY, localZ, BlockId.ShortGrass, markDirty: false);
+                data.SetBlock(localX, plantY, localZ, BlockId.ShortGrass);
             }
         }
 
         private static bool TryPlaceFlower(
-            World.Chunk chunk,
+            ChunkGenerationData data,
             int localX,
             int plantY,
             int localZ,
@@ -148,20 +148,18 @@ namespace MineCraftUnity.WorldGen
                 < 0.5f => BlockId.Dandelion,
                 _ => BlockId.Poppy
             };
-            chunk.SetBlock(localX, plantY, localZ, flower, markDirty: false);
+            data.SetBlock(localX, plantY, localZ, flower);
             return true;
         }
 
         private static bool TryPlaceTree(
-            Level level,
-            World.Chunk chunk,
+            ChunkGenerationData data,
             System.Random random,
             int worldX,
             int surfaceY,
             int worldZ,
             BiomeId biome,
-            float roll,
-            System.Collections.Generic.HashSet<ChunkPos> changedChunks)
+            float roll)
         {
             var treeChance = biome switch
             {
@@ -187,7 +185,7 @@ namespace MineCraftUnity.WorldGen
             var feature = TreeRegistry.GetTreeFeature(biome);
             var config = TreeRegistry.GetConfiguration(biome);
             
-            feature.Place(level, new BlockPos(worldX, surfaceY + 1, worldZ), random, config, changedChunks);
+            feature.Place(data, new BlockPos(worldX, surfaceY + 1, worldZ), random, config);
             return true;
         }
 
@@ -206,3 +204,4 @@ namespace MineCraftUnity.WorldGen
         }
     }
 }
+

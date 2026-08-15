@@ -17,7 +17,7 @@ namespace MineCraftUnity.WorldGen.Trees
         }
 
         public abstract void PlaceFoliage(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             System.Random random,
             TreeConfiguration config,
@@ -31,13 +31,13 @@ namespace MineCraftUnity.WorldGen.Trees
         protected abstract bool ShouldSkipLocation(System.Random random, int localX, int localY, int localZ, int radius, bool giantTrunk);
 
         protected void PlaceFoliageBlock(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             System.Random random,
             BlockPos pos,
             TreeConfiguration config)
         {
-            buffer.TryPlaceLeaf(level, pos, config.FoliageProvider);
+            buffer.TryPlaceLeaf(data, pos, config.FoliageProvider);
         }
 
         protected bool CheckSkip(System.Random random, int ax, int yo, int az, int layerRadius, bool doubleTrunk)
@@ -57,3 +57,5 @@ namespace MineCraftUnity.WorldGen.Trees
         }
     }
 }
+
+

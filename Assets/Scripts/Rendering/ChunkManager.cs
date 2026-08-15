@@ -409,7 +409,12 @@ namespace MineCraftUnity.Rendering
                 {
                     var pos = new ChunkPos(center.X + dx, center.Z + dz);
                     _neededChunks.Add(pos);
-                    GenerateAndMeshImmediate(pos);
+                    var data = _generator.ComputeChunkData(pos);
+                    var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
+                    var chunk = _level.GetOrCreateChunk(pos);
+                    chunk.ApplyData(data);
+                    chunk.MarkGenerated();
+                    _level.QueueDecorationsAndApply(chunk, data.Decorations, changedChunks);
                 }
             }
 
@@ -515,7 +520,12 @@ namespace MineCraftUnity.Rendering
 
         private void DrainAsyncGenerationResults()
         {
-            while (_generationWorker.TryDequeueCompleted(out var result))
+            var maxApply = _spawnAreaCoroutine != null
+                ? WorldConstants.MaxSpawnChunkMeshesPerFrame
+                : WorldConstants.MaxChunkMeshesPerFrame;
+
+            var applied = 0;
+            while (applied < maxApply && _generationWorker.TryDequeueCompleted(out var result))
             {
                 var pos = result.Position;
                 _generationInFlight.Remove(pos);
@@ -534,18 +544,23 @@ namespace MineCraftUnity.Rendering
                 
                 _failedRetries.Remove(pos);
 
-                if (!_level.TryGetChunk(pos, out var chunk) || !chunk.IsGenerated)
+                Chunk chunk;
+                var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
+                lock (_worldLock)
                 {
-                    continue;
+                    chunk = _level.GetOrCreateChunk(pos);
+                    chunk.ApplyData(result.Data);
+                    chunk.MarkGenerated();
+                    _level.QueueDecorationsAndApply(chunk, result.Data.Decorations, changedChunks);
                 }
 
                 _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
                 MarkAdjacentMeshesDirty(pos);
                 ScheduleMesh(pos);
                 
-                if (result.ChangedChunks != null)
+                if (changedChunks.Count > 0)
                 {
-                    foreach (var changedPos in result.ChangedChunks)
+                    foreach (var changedPos in changedChunks)
                     {
                         if (!changedPos.Equals(pos))
                         {
@@ -553,6 +568,7 @@ namespace MineCraftUnity.Rendering
                         }
                     }
                 }
+                applied++;
             }
         }
 
@@ -709,8 +725,10 @@ namespace MineCraftUnity.Rendering
                 var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
                 using (ChunkProfilerMarkers.GenerateChunk.Auto())
                 {
-                    _generator.GenerateChunk(_level, chunk, changedChunks);
-                    _level.ApplyPendingDecorations(chunk, changedChunks);
+                    var data = _generator.ComputeChunkData(pos);
+                    chunk.ApplyData(data);
+                    chunk.MarkGenerated();
+                    _level.QueueDecorationsAndApply(chunk, data.Decorations, changedChunks);
                 }
 
                 _fluidSimulator?.ScheduleSpreadCandidatesForChunk(chunk);
@@ -769,8 +787,10 @@ namespace MineCraftUnity.Rendering
                 var changedChunks = new System.Collections.Generic.HashSet<ChunkPos>();
                 using (ChunkProfilerMarkers.GenerateChunk.Auto())
                 {
-                    _generator.GenerateChunk(_level, chunk, changedChunks);
-                    _level.ApplyPendingDecorations(chunk, changedChunks);
+                    var data = _generator.ComputeChunkData(pos);
+                    chunk.ApplyData(data);
+                    chunk.MarkGenerated();
+                    _level.QueueDecorationsAndApply(chunk, data.Decorations, changedChunks);
                 }
 
                 MarkAdjacentMeshesDirty(pos);
@@ -811,6 +831,11 @@ namespace MineCraftUnity.Rendering
             }
 
             if (!_level.TryGetChunk(result.Position, out var chunk))
+            {
+                return;
+            }
+
+            if (chunk.Revision != result.Revision)
             {
                 return;
             }

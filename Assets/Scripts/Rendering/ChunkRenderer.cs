@@ -66,7 +66,7 @@ namespace MineCraftUnity.Rendering
                 _mesh = new Mesh { name = $"ChunkMesh_{chunk.Position}" };
             }
 
-            var data = ChunkMeshBuilder.ComputeMeshData(chunk, level);
+            var data = ChunkMeshBuilder.ComputeMeshData(new ChunkMeshSnapshot(level, chunk));
             ApplyMeshData(data);
             chunk.IsMeshDirty = false;
         }
@@ -136,3 +136,4 @@ namespace MineCraftUnity.Rendering
         }
     }
 }
+

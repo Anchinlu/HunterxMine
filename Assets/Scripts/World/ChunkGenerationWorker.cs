@@ -1,3 +1,4 @@
+using MineCraftUnity.World;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -11,18 +12,18 @@ namespace MineCraftUnity.World
     public readonly struct ChunkGenerationResult
     {
         public ChunkPos Position { get; }
+        public ChunkGenerationData Data { get; }
         public bool Success { get; }
         public bool WasSkipped { get; }
         public string ErrorMessage { get; }
-        public HashSet<ChunkPos> ChangedChunks { get; }
 
-        public ChunkGenerationResult(ChunkPos position, bool success, bool wasSkipped, string errorMessage, HashSet<ChunkPos> changedChunks)
+        public ChunkGenerationResult(ChunkPos position, ChunkGenerationData data, bool success, bool wasSkipped, string errorMessage)
         {
             Position = position;
+            Data = data;
             Success = success;
             WasSkipped = wasSkipped;
             ErrorMessage = errorMessage;
-            ChangedChunks = changedChunks;
         }
     }
 
@@ -57,26 +58,18 @@ namespace MineCraftUnity.World
 
             Task.Run(() =>
             {
+                ChunkGenerationData data = null;
                 bool success = true;
                 bool wasSkipped = false;
                 string errorMessage = null;
-                var changedChunks = new HashSet<ChunkPos>();
 
                 try
                 {
                     if (isStillNeeded(pos))
                     {
-                        lock (worldLock)
+                        using (ChunkProfilerMarkers.GenerateChunk.Auto())
                         {
-                            var chunk = level.GetOrCreateChunk(pos);
-                            if (!chunk.IsGenerated)
-                            {
-                                using (ChunkProfilerMarkers.GenerateChunk.Auto())
-                                {
-                                    generator.GenerateChunk(level, chunk, changedChunks);
-                                    level.ApplyPendingDecorations(chunk, changedChunks);
-                                }
-                            }
+                            data = generator.ComputeChunkData(pos);
                         }
                     }
                     else
@@ -91,7 +84,7 @@ namespace MineCraftUnity.World
                 }
                 finally
                 {
-                    _completed.Enqueue(new ChunkGenerationResult(pos, success, wasSkipped, errorMessage, changedChunks));
+                    _completed.Enqueue(new ChunkGenerationResult(pos, data, success, wasSkipped, errorMessage));
                     _parallelLimit.Release();
                 }
             });
@@ -110,3 +103,4 @@ namespace MineCraftUnity.World
         }
     }
 }
+

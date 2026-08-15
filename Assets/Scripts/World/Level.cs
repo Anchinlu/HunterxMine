@@ -183,8 +183,19 @@ namespace MineCraftUnity.World
             else if (localZ == WorldConstants.ChunkSize - 1) changedChunks.Add(new ChunkPos(chunkPos.X, chunkPos.Z + 1));
         }
 
-        public void ApplyPendingDecorations(Chunk chunk, HashSet<ChunkPos> changedChunks)
+        public void QueueDecorationsAndApply(Chunk chunk, System.Collections.Generic.List<PendingBlock> decorations, HashSet<ChunkPos> changedChunks)
         {
+            foreach (var block in decorations)
+            {
+                var targetChunkPos = new ChunkPos(FloorDiv(block.Pos.X, WorldConstants.ChunkSize), FloorDiv(block.Pos.Z, WorldConstants.ChunkSize));
+                if (!_pendingDecorations.TryGetValue(targetChunkPos, out var pendingSet))
+                {
+                    pendingSet = new HashSet<PendingBlock>();
+                    _pendingDecorations[targetChunkPos] = pendingSet;
+                }
+                pendingSet.Add(block);
+            }
+
             if (!_pendingDecorations.TryGetValue(chunk.Position, out var pending))
             {
                 return;
@@ -333,7 +344,7 @@ namespace MineCraftUnity.World
             return ShouldRenderFaceAgainst(currentId, currentLevel, neighborId, neighborLevel, face);
         }
 
-        private static bool ShouldRenderFaceAgainst(
+        public static bool ShouldRenderFaceAgainst(
             BlockId currentId,
             byte currentLevel,
             BlockId neighborId,
@@ -397,13 +408,13 @@ namespace MineCraftUnity.World
             }
         }
 
-        private static int ModWorldCoord(int coord, int size)
+        public static int ModWorldCoord(int coord, int size)
         {
             var mod = coord % size;
             return mod < 0 ? mod + size : mod;
         }
 
-        private static int FloorDiv(int value, int divisor)
+        public static int FloorDiv(int value, int divisor)
         {
             var div = value / divisor;
             var rem = value % divisor;

@@ -12,7 +12,7 @@ namespace MineCraftUnity.WorldGen.Trees
         }
 
         public override void PlaceFoliage(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             Random random,
             TreeConfiguration config,
@@ -23,13 +23,13 @@ namespace MineCraftUnity.WorldGen.Trees
         {
             BlockPos pos = attachment.Pos.Offset(0, Offset, 0);
             
-            PlaceRow(level, buffer, random, pos, radius + attachment.RadiusOffset, -1 - foliageHeight, attachment.DoubleTrunk, config);
-            PlaceRow(level, buffer, random, pos, radius - 1, -foliageHeight, attachment.DoubleTrunk, config);
-            PlaceRow(level, buffer, random, pos, radius + attachment.RadiusOffset - 1, 0, attachment.DoubleTrunk, config);
+            PlaceRow(data, buffer, random, pos, radius + attachment.RadiusOffset, -1 - foliageHeight, attachment.DoubleTrunk, config);
+            PlaceRow(data, buffer, random, pos, radius - 1, -foliageHeight, attachment.DoubleTrunk, config);
+            PlaceRow(data, buffer, random, pos, radius + attachment.RadiusOffset - 1, 0, attachment.DoubleTrunk, config);
         }
 
         private void PlaceRow(
-            Level level, TreePlacementBuffer buffer, Random random, BlockPos pos, int layerRadius, int yo, bool doubleTrunk, TreeConfiguration config)
+            ChunkGenerationData data, TreePlacementBuffer buffer, Random random, BlockPos pos, int layerRadius, int yo, bool doubleTrunk, TreeConfiguration config)
         {
             int bound = doubleTrunk ? layerRadius + 1 : layerRadius;
             for (int ax = -layerRadius; ax <= bound; ax++)
@@ -38,7 +38,7 @@ namespace MineCraftUnity.WorldGen.Trees
                 {
                     if (!CheckSkip(random, ax, yo, az, layerRadius, doubleTrunk))
                     {
-                        PlaceFoliageBlock(level, buffer, random, pos.Offset(ax, yo, az), config);
+                        PlaceFoliageBlock(data, buffer, random, pos.Offset(ax, yo, az), config);
                     }
                 }
             }
@@ -59,3 +59,5 @@ namespace MineCraftUnity.WorldGen.Trees
         }
     }
 }
+
+

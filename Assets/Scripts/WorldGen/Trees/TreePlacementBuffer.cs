@@ -14,14 +14,14 @@ namespace MineCraftUnity.WorldGen.Trees
             _blocks[pos] = new PendingBlock(pos, id, metadata);
         }
 
-        public bool TryPlaceLeaf(Level level, BlockPos pos, BlockId id, byte metadata = 0)
+        public bool TryPlaceLeaf(ChunkGenerationData data, BlockPos pos, BlockId id, byte metadata = 0)
         {
             if (_blocks.TryGetValue(pos, out var existing) && BlockRegistry.IsLog(existing.Id))
             {
                 return false;
             }
 
-            var currentBlock = level.GetBlock(pos.X, pos.Y, pos.Z);
+            var currentBlock = data.GetBlock(pos.X - data.Position.GetMinBlockX(), pos.Y, pos.Z - data.Position.GetMinBlockZ());
             if (currentBlock != BlockId.Air && !BlockRegistry.IsLeaves(currentBlock))
             {
                 return false;
@@ -31,12 +31,12 @@ namespace MineCraftUnity.WorldGen.Trees
             return true;
         }
 
-        public bool Validate(Level level)
+        public bool Validate(ChunkGenerationData data)
         {
             foreach (var kvp in _blocks)
             {
                 var pos = kvp.Key;
-                var currentBlock = level.GetBlock(pos.X, pos.Y, pos.Z);
+                var currentBlock = data.GetBlock(pos.X - data.Position.GetMinBlockX(), pos.Y, pos.Z - data.Position.GetMinBlockZ());
                 
                 // Blocks that trees can replace
                 if (currentBlock != BlockId.Air && 
@@ -49,12 +49,11 @@ namespace MineCraftUnity.WorldGen.Trees
             return true;
         }
 
-        public void Commit(Level level, HashSet<ChunkPos> changedChunks)
+        public void Commit(ChunkGenerationData data)
         {
             foreach (var kvp in _blocks)
             {
-                var pos = kvp.Key;
-                level.SetBlockDuringGeneration(pos.X, pos.Y, pos.Z, kvp.Value.Id, kvp.Value.Metadata, changedChunks);
+                data.AddDecoration(kvp.Value);
             }
         }
     }

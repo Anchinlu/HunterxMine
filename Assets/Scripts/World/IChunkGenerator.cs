@@ -1,3 +1,4 @@
+using MineCraftUnity.World;
 using System.Collections.Generic;
 using MineCraftUnity.Core;
 
@@ -8,7 +9,8 @@ namespace MineCraftUnity.World
     /// </summary>
     public interface IChunkGenerator
     {
-        void GenerateChunk(Level level, Chunk chunk, HashSet<ChunkPos> changedChunks);
+        ChunkGenerationData ComputeChunkData(ChunkPos pos);
         int SampleSurfaceHeight(int worldX, int worldZ);
     }
 }
+

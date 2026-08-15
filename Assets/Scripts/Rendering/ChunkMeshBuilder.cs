@@ -9,7 +9,7 @@ using UnityEngine.Rendering;
 namespace MineCraftUnity.Rendering
 {
     /// <summary>
-    /// MC ref: net.minecraft.client.renderer.block.ModelBlockRenderer — greedy face emission per chunk.
+    /// MC ref: net.minecraft.client.renderer.block.ModelBlockRenderer — greedy face emission per snapshot.
     /// </summary>
     public static class ChunkMeshBuilder
     {
@@ -26,11 +26,11 @@ namespace MineCraftUnity.Rendering
 
         private static MeshBuildBuffers Buffers => _threadBuffers ??= new MeshBuildBuffers();
 
-        public static ChunkMeshData ComputeMeshData(Chunk chunk, Level level)
+        public static ChunkMeshData ComputeMeshData(ChunkMeshSnapshot snapshot)
         {
-            var data = new ChunkMeshData { Position = chunk.Position };
+            var data = new ChunkMeshData { Position = snapshot.Position };
 
-            if (!chunk.HasBlocks)
+            if (snapshot.IsEmpty)
             {
                 data.IsEmpty = true;
                 data.SubmeshTriangles = CreateEmptySubmeshes();
@@ -46,8 +46,12 @@ namespace MineCraftUnity.Rendering
             var layerColors = Buffers.LayerColors;
             var layerTriangles = Buffers.LayerTriangles;
 
-            var minY = chunk.MinFilledY;
-            var maxY = chunk.MaxFilledY;
+            // Min/Max filled Y is not available in snapshot easily without scanning or passing.
+            // Let's scan from MinY to MaxY for now or pass it. 
+            // Wait, we can get it from the snapshot or just use 0 to MaxY.
+            // Let's iterate from WorldConstants.MinY to WorldConstants.MaxY
+            var minY = WorldConstants.MinY;
+            var maxY = WorldConstants.MaxY;
 
             for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
             {
@@ -55,20 +59,21 @@ namespace MineCraftUnity.Rendering
                 {
                     for (var localZ = 0; localZ < WorldConstants.ChunkSize; localZ++)
                     {
-                        var blockId = chunk.GetBlock(localX, y, localZ);
+                        var blockId = snapshot.GetBlock(
+                            snapshot.Position.GetMinBlockX() + localX, y, snapshot.Position.GetMinBlockZ() + localZ);
                         if (blockId == BlockId.Air)
                         {
                             continue;
                         }
 
                         var origin = new Vector3(
-                            chunk.Position.GetMinBlockX() + localX,
+                            snapshot.Position.GetMinBlockX() + localX,
                             y,
-                            chunk.Position.GetMinBlockZ() + localZ);
+                            snapshot.Position.GetMinBlockZ() + localZ);
 
                         if (BlockRegistry.IsFluid(blockId))
                         {
-                            EmitWaterFaces(chunk, localX, y, localZ, origin, level,
+                            EmitWaterFaces(snapshot, localX, y, localZ, origin,
                                 layerVertices, layerUvs, layerNormals, layerColors, layerTriangles);
                         }
                         else
@@ -76,12 +81,12 @@ namespace MineCraftUnity.Rendering
                             var renderKind = BlockRegistry.Get(blockId).RenderKind;
                             if (renderKind == BlockRenderKind.Cross)
                             {
-                                EmitCrossModel(blockId, chunk, localX, y, localZ, origin,
+                                EmitCrossModel(blockId, snapshot, localX, y, localZ, origin,
                                     layerVertices, layerUvs, layerNormals, layerColors, layerTriangles);
                             }
                             else
                             {
-                                EmitBlockFaces(blockId, chunk, localX, y, localZ, origin, level,
+                                EmitBlockFaces(blockId, snapshot, localX, y, localZ, origin,
                                     layerVertices, layerUvs, layerNormals, layerColors, layerTriangles, Buffers);
                             }
                         }
@@ -133,11 +138,11 @@ namespace MineCraftUnity.Rendering
             mesh.RecalculateBounds();
         }
 
-        public static void BuildInto(Mesh mesh, Chunk chunk, Level level)
+        public static void BuildInto(Mesh mesh, ChunkMeshSnapshot snapshot)
         {
             using (ChunkProfilerMarkers.MeshBuildInto.Auto())
             {
-                ApplyMeshData(mesh, ComputeMeshData(chunk, level));
+                ApplyMeshData(mesh, ComputeMeshData(snapshot));
             }
         }
 
@@ -261,21 +266,20 @@ namespace MineCraftUnity.Rendering
             }
         }
 
-        public static Mesh Build(Chunk chunk, Level level)
+        public static Mesh Build(ChunkMeshSnapshot snapshot)
         {
-            var mesh = new Mesh { name = $"ChunkMesh_{chunk.Position}" };
-            BuildInto(mesh, chunk, level);
+            var mesh = new Mesh { name = $"ChunkMesh_{snapshot.Position}" };
+            BuildInto(mesh, snapshot);
             return mesh;
         }
 
         private static void EmitBlockFaces(
-            BlockId blockId,
-            Chunk chunk,
+            BlockId blockId, ChunkMeshSnapshot snapshot,
             int localX,
             int y,
             int localZ,
             Vector3 origin,
-            Level level,
+            
             List<Vector3>[] layerVertices,
             List<Vector2>[] layerUvs,
             List<Vector3>[] layerNormals,
@@ -291,7 +295,7 @@ namespace MineCraftUnity.Rendering
 
             if (definition.RenderKind == BlockRenderKind.CutoutCube)
             {
-                EmitCutoutCubeFaces(blockId, chunk, localX, y, localZ, origin, level,
+                EmitCutoutCubeFaces(blockId, snapshot, localX, y, localZ, origin,
                     layerVertices, layerUvs, layerNormals, layerColors, layerTriangles, collisionBuffers);
                 return;
             }
@@ -299,14 +303,14 @@ namespace MineCraftUnity.Rendering
             for (var i = 0; i < AllFaces.Length; i++)
             {
                 var face = AllFaces[i];
-                if (!level.ShouldRenderFaceInChunk(chunk, localX, y, localZ, face, blockId))
+                if (!snapshot.ShouldRenderFaceInChunk(localX, y, localZ, face, blockId))
                 {
                     continue;
                 }
 
                 if (definition.RenderKind == BlockRenderKind.GrassBlock)
                 {
-                    EmitGrassFace(chunk, localX, y, localZ, face, origin,
+                    EmitGrassFace(snapshot, localX, y, localZ, face, origin,
                         layerVertices, layerUvs, layerNormals, layerColors, layerTriangles);
                     if (definition.IsSolid)
                     {
@@ -316,7 +320,7 @@ namespace MineCraftUnity.Rendering
                 else
                 {
                     var meshLayer = BlockIdToLayer(blockId);
-                    byte metadata = BlockRegistry.IsLog(blockId) ? chunk.GetMetadata(localX, y, localZ) : (byte)0;
+                    byte metadata = BlockRegistry.IsLog(blockId) ? snapshot.GetMetadata(localX, y, localZ) : (byte)0;
                     AddFace(face, origin, GetBlockFaceTint(face), layerVertices[(int)meshLayer], layerUvs[(int)meshLayer],
                         layerNormals[(int)meshLayer], layerColors[(int)meshLayer], layerTriangles[(int)meshLayer], metadata);
                     if (definition.IsSolid)
@@ -328,13 +332,12 @@ namespace MineCraftUnity.Rendering
         }
 
         private static void EmitCutoutCubeFaces(
-            BlockId blockId,
-            Chunk chunk,
+            BlockId blockId, ChunkMeshSnapshot snapshot,
             int localX,
             int y,
             int localZ,
             Vector3 origin,
-            Level level,
+            
             List<Vector3>[] layerVertices,
             List<Vector2>[] layerUvs,
             List<Vector3>[] layerNormals,
@@ -343,11 +346,11 @@ namespace MineCraftUnity.Rendering
             MeshBuildBuffers collisionBuffers)
         {
             var meshLayer = BlockIdToLayer(blockId);
-            var foliageTint = GetFoliageTint(chunk, localX, y, localZ);
+            var foliageTint = GetFoliageTint(snapshot, localX, y, localZ);
             for (var fi = 0; fi < AllFaces.Length; fi++)
             {
                 var cutoutFace = AllFaces[fi];
-                if (!level.ShouldRenderFaceInChunk(chunk, localX, y, localZ, cutoutFace, blockId))
+                if (!snapshot.ShouldRenderFaceInChunk(localX, y, localZ, cutoutFace, blockId))
                 {
                     continue;
                 }
@@ -367,12 +370,12 @@ namespace MineCraftUnity.Rendering
         }
 
         private static void EmitWaterFaces(
-            Chunk chunk,
+            ChunkMeshSnapshot snapshot,
             int localX,
             int y,
             int localZ,
             Vector3 origin,
-            Level level,
+            
             List<Vector3>[] layerVertices,
             List<Vector2>[] layerUvs,
             List<Vector3>[] layerNormals,
@@ -380,14 +383,14 @@ namespace MineCraftUnity.Rendering
             List<int>[] layerTriangles)
         {
             var blockId = BlockId.Water;
-            var fluidLevel = chunk.GetFluidLevel(localX, y, localZ);
+            var fluidLevel = snapshot.GetFluidLevel(localX, y, localZ);
             var surfaceHeight = FluidLevel.GetHeight01(fluidLevel);
             var layer = (int)ChunkMeshLayer.Water;
 
             for (var i = 0; i < AllFaces.Length; i++)
             {
                 var face = AllFaces[i];
-                if (!level.ShouldRenderFaceInChunk(chunk, localX, y, localZ, face, blockId))
+                if (!snapshot.ShouldRenderFaceInChunk(localX, y, localZ, face, blockId))
                 {
                     continue;
                 }
@@ -413,7 +416,7 @@ namespace MineCraftUnity.Rendering
         }
 
         private static void EmitGrassFace(
-            Chunk chunk,
+            ChunkMeshSnapshot snapshot,
             int localX,
             int y,
             int localZ,
@@ -425,7 +428,7 @@ namespace MineCraftUnity.Rendering
             List<Color32>[] layerColors,
             List<int>[] layerTriangles)
         {
-            var biome = chunk.GetBiome(localX, y, localZ);
+            var biome = snapshot.GetBiome(localX, y, localZ);
             var isSnowy = BiomeRegistry.IsSnowyBiome(biome);
             var grassTint = BlockFaceLighting.ApplyShade(
                 (Color32)BiomeRegistry.GetGrassTint(biome),
@@ -492,15 +495,15 @@ namespace MineCraftUnity.Rendering
             _ => ChunkMeshLayer.Stone
         };
 
-        private static Color32 GetGrassTint(Chunk chunk, int localX, int y, int localZ)
+        private static Color32 GetGrassTint(ChunkMeshSnapshot snapshot, int localX, int y, int localZ)
         {
-            var biome = chunk.GetBiome(localX, y, localZ);
+            var biome = snapshot.GetBiome(localX, y, localZ);
             return ToColor32(BiomeRegistry.GetGrassTint(biome));
         }
 
-        private static Color32 GetFoliageTint(Chunk chunk, int localX, int y, int localZ)
+        private static Color32 GetFoliageTint(ChunkMeshSnapshot snapshot, int localX, int y, int localZ)
         {
-            var biome = chunk.GetBiome(localX, y, localZ);
+            var biome = snapshot.GetBiome(localX, y, localZ);
             return ToColor32(BiomeRegistry.GetFoliageTint(biome));
         }
 
@@ -509,8 +512,7 @@ namespace MineCraftUnity.Rendering
 
         /// <summary>MC ref: two diagonal cross quads (tinted_plains_cross model).</summary>
         private static void EmitCrossModel(
-            BlockId blockId,
-            Chunk chunk,
+            BlockId blockId, ChunkMeshSnapshot snapshot,
             int localX,
             int y,
             int localZ,
@@ -523,7 +525,7 @@ namespace MineCraftUnity.Rendering
         {
             var layer = (int)BlockIdToLayer(blockId);
             var tint = BlockRegistry.UsesGrassTint(blockId)
-                ? GetGrassTint(chunk, localX, y, localZ)
+                ? GetGrassTint(snapshot, localX, y, localZ)
                 : WhiteVertex;
             var shade = BlockFaceLighting.GetShadeColor(BlockFace.Up);
             tint = MultiplyTint(tint, shade);
@@ -848,3 +850,7 @@ namespace MineCraftUnity.Rendering
         }
     }
 }
+
+
+
+

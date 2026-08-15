@@ -35,7 +35,7 @@ namespace MineCraftUnity.WorldGen.Trees
         }
 
         public override List<FoliageAttachment> PlaceTrunk(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             Random random,
             int treeHeight,
@@ -149,3 +149,4 @@ namespace MineCraftUnity.WorldGen.Trees
         }
     }
 }
+

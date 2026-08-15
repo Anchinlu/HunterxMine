@@ -17,7 +17,7 @@ namespace MineCraftUnity.WorldGen.Trees
         }
 
         public override void PlaceFoliage(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             Random random,
             TreeConfiguration config,
@@ -36,7 +36,7 @@ namespace MineCraftUnity.WorldGen.Trees
 
                 if (!CheckSkip(random, rx, ry, rz, radius, attachment.DoubleTrunk))
                 {
-                    PlaceFoliageBlock(level, buffer, random, pos.Offset(rx, ry, rz), config);
+                    PlaceFoliageBlock(data, buffer, random, pos.Offset(rx, ry, rz), config);
                 }
             }
         }
@@ -52,3 +52,5 @@ namespace MineCraftUnity.WorldGen.Trees
         }
     }
 }
+
+

@@ -12,7 +12,7 @@ namespace MineCraftUnity.WorldGen.Trees
         }
 
         public override void PlaceFoliage(
-            Level level,
+            ChunkGenerationData data,
             TreePlacementBuffer buffer,
             Random random,
             TreeConfiguration config,
@@ -26,23 +26,23 @@ namespace MineCraftUnity.WorldGen.Trees
 
             if (doubleTrunk)
             {
-                PlaceRow(level, buffer, random, pos, radius + 2, -1, doubleTrunk, config);
-                PlaceRow(level, buffer, random, pos, radius + 3, 0, doubleTrunk, config);
-                PlaceRow(level, buffer, random, pos, radius + 2, 1, doubleTrunk, config);
+                PlaceRow(data, buffer, random, pos, radius + 2, -1, doubleTrunk, config);
+                PlaceRow(data, buffer, random, pos, radius + 3, 0, doubleTrunk, config);
+                PlaceRow(data, buffer, random, pos, radius + 2, 1, doubleTrunk, config);
                 if (random.Next(2) == 0)
                 {
-                    PlaceRow(level, buffer, random, pos, radius, 2, doubleTrunk, config);
+                    PlaceRow(data, buffer, random, pos, radius, 2, doubleTrunk, config);
                 }
             }
             else
             {
-                PlaceRow(level, buffer, random, pos, radius + 2, -1, doubleTrunk, config);
-                PlaceRow(level, buffer, random, pos, radius + 1, 0, doubleTrunk, config);
+                PlaceRow(data, buffer, random, pos, radius + 2, -1, doubleTrunk, config);
+                PlaceRow(data, buffer, random, pos, radius + 1, 0, doubleTrunk, config);
             }
         }
 
         private void PlaceRow(
-            Level level, TreePlacementBuffer buffer, Random random, BlockPos pos, int layerRadius, int yo, bool doubleTrunk, TreeConfiguration config)
+            ChunkGenerationData data, TreePlacementBuffer buffer, Random random, BlockPos pos, int layerRadius, int yo, bool doubleTrunk, TreeConfiguration config)
         {
             int bound = doubleTrunk ? layerRadius + 1 : layerRadius;
             for (int ax = -layerRadius; ax <= bound; ax++)
@@ -51,7 +51,7 @@ namespace MineCraftUnity.WorldGen.Trees
                 {
                     if (!CheckSkip(random, ax, yo, az, layerRadius, doubleTrunk))
                     {
-                        PlaceFoliageBlock(level, buffer, random, pos.Offset(ax, yo, az), config);
+                        PlaceFoliageBlock(data, buffer, random, pos.Offset(ax, yo, az), config);
                     }
                 }
             }
@@ -74,3 +74,5 @@ namespace MineCraftUnity.WorldGen.Trees
         }
     }
 }
+
+

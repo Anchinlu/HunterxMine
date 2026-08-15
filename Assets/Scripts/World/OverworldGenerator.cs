@@ -1,3 +1,4 @@
+using MineCraftUnity.World;
 using MineCraftUnity.Core;
 using MineCraftUnity.WorldGen;
 
@@ -21,7 +22,8 @@ namespace MineCraftUnity.World
         public int SampleSurfaceHeight(int worldX, int worldZ) =>
             NoiseBasedChunkFiller.SampleSurfaceY(_randomState, worldX, worldZ);
 
-        public void GenerateChunk(Level level, Chunk chunk, System.Collections.Generic.HashSet<ChunkPos> changedChunks) =>
-            NoiseBasedChunkFiller.FillChunk(level, chunk, _randomState, changedChunks);
+        public ChunkGenerationData ComputeChunkData(ChunkPos pos) =>
+            NoiseBasedChunkFiller.ComputeChunkData(pos, _randomState);
     }
 }
+
