@@ -18,7 +18,7 @@ namespace MineCraftUnity.UI
 
             if (string.Equals(rawInput, "/", StringComparison.Ordinal))
             {
-                return new[] { "/help", "/time", "/weather", "/locate", "/tp" };
+                return new[] { "/help", "/time", "/weather", "/locate", "/tp", "/class" };
             }
 
             var biomeMatches = GetBiomeCommandMatches(rawInput);
@@ -66,7 +66,13 @@ namespace MineCraftUnity.UI
                 "/locate",
                 "/locate biome",
                 "/tp",
-                "/tp biome"
+                "/tp biome",
+                "/class",
+                "/class warrior",
+                "/class archer",
+                "/class mage",
+                "/class heavyarmor",
+                "/class assassin"
             };
 
             foreach (var biomeName in BiomeNameParser.GetSuggestions(string.Empty, 12))

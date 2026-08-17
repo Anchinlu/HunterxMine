@@ -19,7 +19,7 @@ Shader "MineCraft/CelestialBillboard"
         {
             Blend SrcAlpha OneMinusSrcAlpha
             ZWrite Off
-            ZTest Always
+            ZTest LEqual
             Cull Off
 
             HLSLPROGRAM

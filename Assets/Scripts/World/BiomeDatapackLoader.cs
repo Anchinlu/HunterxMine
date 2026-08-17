@@ -41,6 +41,12 @@ namespace MineCraftUnity.World
         {
             Definitions.Clear();
 
+            if (WorldGenDataPaths.UseResources)
+            {
+                LoadFromResources();
+                return;
+            }
+
             if (!Directory.Exists(directory))
             {
                 Debug.LogWarning($"[BiomeDatapackLoader] Biome directory not found: {directory}");
@@ -77,6 +83,47 @@ namespace MineCraftUnity.World
             }
 
             Debug.Log($"[BiomeDatapackLoader] Loaded {loadedCount} biomes from datapack.");
+        }
+
+        private static void LoadFromResources()
+        {
+            var assets = UnityEngine.Resources.LoadAll<UnityEngine.TextAsset>(
+                $"{WorldGenDataPaths.ResourceRoot}/biome");
+
+            if (assets == null || assets.Length == 0)
+            {
+                Debug.LogWarning("[BiomeDatapackLoader] No biome TextAssets found in Resources — using fallbacks.");
+                CreateFallbackDefinitions();
+                return;
+            }
+
+            var loadedCount = 0;
+            foreach (var asset in assets)
+            {
+                if (!BiomeJsonParser.TryParseIdFromFileName(asset.name, out var id))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Definitions[id] = BiomeJsonParser.Parse(id, asset.text);
+                    loadedCount++;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[BiomeDatapackLoader] Failed to parse {asset.name}: {ex.Message}");
+                }
+            }
+
+            if (loadedCount == 0)
+            {
+                Debug.LogWarning("[BiomeDatapackLoader] Parsed 0 biome definitions from Resources — using fallbacks.");
+                CreateFallbackDefinitions();
+                return;
+            }
+
+            Debug.Log($"[BiomeDatapackLoader] Loaded {loadedCount} biomes from Resources.");
         }
 
         private static void ApplyAliasDefaults()

@@ -61,6 +61,13 @@ namespace MineCraftUnity.WorldGen.Noise
         {
             ParametersByName.Clear();
 
+            if (WorldGenDataPaths.UseResources)
+            {
+                LoadFromResources();
+                _initialized = true;
+                return;
+            }
+
             string noiseDirectory = WorldGenDataPaths.NoiseDirectory;
             if (!Directory.Exists(noiseDirectory))
             {
@@ -102,6 +109,50 @@ namespace MineCraftUnity.WorldGen.Noise
             else
             {
                 Debug.Log($"NoiseRegistry: loaded {ParametersByName.Count} overworld noise definitions (top-level, expected 61)");
+            }
+        }
+
+        private static void LoadFromResources()
+        {
+            var assets = UnityEngine.Resources.LoadAll<UnityEngine.TextAsset>(
+                $"{WorldGenDataPaths.ResourceRoot}/noise");
+
+            if (assets == null || assets.Length == 0)
+            {
+                Debug.LogError("NoiseRegistry: no noise TextAssets found in Resources.");
+                return;
+            }
+
+            foreach (var asset in assets)
+            {
+                if (asset.name.StartsWith("_", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (!TryParseNoiseJson(asset.text, out int firstOctave, out double[] amplitudes))
+                    {
+                        Debug.LogWarning($"NoiseRegistry: skipping invalid noise resource {asset.name}");
+                        continue;
+                    }
+
+                    ParametersByName[asset.name] = new NoiseParameters(firstOctave, amplitudes);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"NoiseRegistry: failed to parse {asset.name}: {ex.Message}");
+                }
+            }
+
+            if (ParametersByName.Count == 0)
+            {
+                Debug.LogError("NoiseRegistry: loaded 0 noise definitions from Resources.");
+            }
+            else
+            {
+                Debug.Log($"NoiseRegistry: loaded {ParametersByName.Count} noise definitions from Resources.");
             }
         }
 

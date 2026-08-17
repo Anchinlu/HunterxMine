@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7f60340b0733790429fdda92e12badbe, type: 3}
+  m_Name: Mage
+  m_EditorClassIdentifier: Assembly-CSharp::MineCraftUnity.Player.CharacterClassDefinition
+  characterClass: 2
+  levelOneStats:
+    hp: 20
+    strength: 12
+    defense: 15
+    agility: 22
+    dexterity: 25
+    intelligence: 48
+    mana: 45
+    stamina: 24
+  growth:
+    hpPerLevel: 3
+    strengthPerLevel: 2
+    defensePerLevel: 2
+    agilityPerLevel: 3
+    dexterityPerLevel: 3
+    intelligencePerLevel: 5
+    manaPerLevel: 5
+    staminaPerLevel: 3

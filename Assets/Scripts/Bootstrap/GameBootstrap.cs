@@ -57,6 +57,8 @@ namespace MineCraftUnity.Bootstrap
 
             if (player != null)
             {
+                PlayerVisualBootstrap.EnsurePlayerVisual(player.transform);
+
                 var playerController = player.GetComponent<PlayerController>();
                 if (playerController != null)
                 {
@@ -65,6 +67,19 @@ namespace MineCraftUnity.Bootstrap
 
                 var stats = player.GetComponent<MineCraftUnity.Player.PlayerStats>();
                 if (stats == null) stats = player.AddComponent<MineCraftUnity.Player.PlayerStats>();
+                
+                var levelSys = player.GetComponent<MineCraftUnity.Player.PlayerLevelSystem>();
+                if (levelSys == null) levelSys = player.AddComponent<MineCraftUnity.Player.PlayerLevelSystem>();
+
+                var defaultClass = Resources.Load<MineCraftUnity.Player.CharacterClassDefinition>($"CharacterClasses/{stats.CurrentClass}");
+                if (defaultClass != null)
+                {
+                    levelSys.Initialize(defaultClass);
+                }
+                else
+                {
+                    Debug.LogWarning($"[Bootstrap] Could not load default class definition for {stats.CurrentClass}");
+                }
                 
                 var inventory = player.GetComponent<MineCraftUnity.Player.PlayerInventory>();
                 if (inventory == null) inventory = player.AddComponent<MineCraftUnity.Player.PlayerInventory>();

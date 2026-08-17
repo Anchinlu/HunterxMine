@@ -8,7 +8,7 @@ namespace MineCraftUnity.Rendering
     /// </summary>
     public static class BlockMaterialLibrary
     {
-        private const string TextureRoot = "Assets/Minecraft/Blocks";
+        private const string ResourceRoot = "Blocks";
         private static readonly Color WaterMaterialTint = new(0.25f, 0.45f, 0.85f, 0.75f);
 
         private static Material[] _materials;
@@ -175,11 +175,14 @@ namespace MineCraftUnity.Rendering
 
         private static Texture2D LoadTexture(string relativePath)
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>($"{TextureRoot}/{relativePath}");
-#else
-            return Resources.Load<Texture2D>($"Blocks/{relativePath.Replace(".png", "")}");
-#endif
+            var resourcePath = $"{ResourceRoot}/{relativePath.Replace(".png", "")}";
+            var tex = Resources.Load<Texture2D>(resourcePath);
+            if (tex == null)
+            {
+                Debug.LogWarning($"[BlockMaterialLibrary] Texture not found at Resources/{resourcePath}");
+            }
+
+            return tex;
         }
 
         private static void SetTexture(Material mat, Texture2D tex)

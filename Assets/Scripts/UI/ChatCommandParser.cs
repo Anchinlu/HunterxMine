@@ -47,14 +47,61 @@ namespace MineCraftUnity.UI
                 return BiomeTeleportCommands.TryExecute(parts, out response);
             }
 
+            if (string.Equals(parts[0], "class", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryExecuteClass(parts, out response);
+            }
+
             if (string.Equals(parts[0], "help", StringComparison.OrdinalIgnoreCase))
             {
-                response = "Commands: time set/query, weather clear/rain/thunder, locate/tp biome <name>, help";
+                response = "Commands: time set/query, weather clear/rain/thunder, locate/tp biome <name>, class <name>, help";
                 return true;
             }
 
             response = $"Unknown command: {parts[0]}. Type help.";
             return false;
+        }
+
+        private static bool TryExecuteClass(string[] parts, out string response)
+        {
+            if (parts.Length < 2)
+            {
+                response = "Usage: class <warrior|archer|mage|heavyarmor|assassin>";
+                return false;
+            }
+
+            if (!Enum.TryParse<MineCraftUnity.Player.CharacterClass>(parts[1], true, out var charClass))
+            {
+                response = $"Unknown class: {parts[1]}.";
+                return false;
+            }
+
+            var player = GameObject.Find("Player");
+            if (player == null)
+            {
+                response = "Player not found.";
+                return false;
+            }
+
+            var levelSys = player.GetComponent<MineCraftUnity.Player.PlayerLevelSystem>();
+            if (levelSys == null)
+            {
+                response = "PlayerLevelSystem not found.";
+                return false;
+            }
+
+            var classDef = Resources.Load<MineCraftUnity.Player.CharacterClassDefinition>($"CharacterClasses/{charClass}");
+            if (classDef == null)
+            {
+                response = $"Class definition not found for {charClass}.";
+                return false;
+            }
+
+            levelSys.Initialize(classDef);
+            
+            var stats = player.GetComponent<MineCraftUnity.Player.PlayerStats>();
+            response = $"Class changed to {charClass} (Lvl {stats.Level}). HP:{stats.MaxHealth}, STR:{stats.Strength}, DEF:{stats.Defense}, AGI:{stats.Agility}, DEX:{stats.Dexterity}, INT:{stats.Intelligence}, MP:{stats.MaxMana}, STA:{stats.MaxStamina}";
+            return true;
         }
 
         private static bool TryExecuteWeather(string[] parts, out string response)

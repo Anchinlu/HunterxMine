@@ -46,12 +46,19 @@ namespace MineCraftUnity.Rendering
             var layerColors = Buffers.LayerColors;
             var layerTriangles = Buffers.LayerTriangles;
 
-            // Min/Max filled Y is not available in snapshot easily without scanning or passing.
-            // Let's scan from MinY to MaxY for now or pass it. 
-            // Wait, we can get it from the snapshot or just use 0 to MaxY.
-            // Let's iterate from WorldConstants.MinY to WorldConstants.MaxY
-            var minY = WorldConstants.MinY;
-            var maxY = WorldConstants.MaxY;
+            // Use the snapshot's filled Y bounds with a 1-block margin for neighbor face culling.
+            // If MinFilledY > MaxFilledY, the chunk is effectively empty.
+            if (snapshot.MinFilledY > snapshot.MaxFilledY)
+            {
+                data.IsEmpty = true;
+                data.SubmeshTriangles = CreateEmptySubmeshes();
+                data.CollisionVertices = System.Array.Empty<Vector3>();
+                data.CollisionTriangles = System.Array.Empty<int>();
+                return data;
+            }
+
+            var minY = System.Math.Max(WorldConstants.MinY, snapshot.MinFilledY - 1);
+            var maxY = System.Math.Min(WorldConstants.MaxY, snapshot.MaxFilledY + 1);
 
             for (var localX = 0; localX < WorldConstants.ChunkSize; localX++)
             {

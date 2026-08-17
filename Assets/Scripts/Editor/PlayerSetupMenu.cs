@@ -18,6 +18,8 @@ namespace MineCraftUnity.Editor
                 player = CreatePlayerObject();
             }
 
+            Selection.activeGameObject = player;
+            PlayerVisualBootstrap.EnsurePlayerVisual(player.transform);
             PositionPlayer(player.transform);
             Selection.activeGameObject = player;
             Debug.Log("[MineCraft] Player ready. WASD + mouse, F = fly, Space/Ctrl = up/down while flying, Esc = unlock cursor.");

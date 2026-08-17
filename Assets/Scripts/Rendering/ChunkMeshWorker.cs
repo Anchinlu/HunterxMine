@@ -17,13 +17,16 @@ namespace MineCraftUnity.Rendering
         public bool WasSkipped { get; }
         public string ErrorMessage { get; }
         public int Revision { get; }
+        public int PipelineGeneration { get; }
 
-        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision, int revision, bool success = true, bool wasSkipped = false, string errorMessage = null)
+        public ChunkMeshResult(ChunkPos position, ChunkMeshData data, bool withCollision, int revision,
+            int pipelineGeneration, bool success = true, bool wasSkipped = false, string errorMessage = null)
         {
             Position = position;
             Data = data;
             WithCollision = withCollision;
             Revision = revision;
+            PipelineGeneration = pipelineGeneration;
             Success = success;
             WasSkipped = wasSkipped;
             ErrorMessage = errorMessage;
@@ -32,6 +35,8 @@ namespace MineCraftUnity.Rendering
 
     /// <summary>
     /// Builds chunk mesh CPU data on worker threads; GPU upload stays on main thread.
+    /// Semaphore is acquired BEFORE creating the snapshot to avoid wasted allocations
+    /// when all workers are busy.
     /// </summary>
     public sealed class ChunkMeshWorker : IDisposable
     {
@@ -52,26 +57,38 @@ namespace MineCraftUnity.Rendering
             Level level,
             bool withCollision,
             object worldLock,
-            Func<ChunkPos, bool> isStillNeeded)
+            Func<ChunkPos, bool> isStillNeeded,
+            int pipelineGeneration)
         {
-            ChunkMeshSnapshot snapshot = null;
-            lock (worldLock)
+            // Acquire worker slot FIRST — avoid expensive snapshot copy when all workers are busy.
+            if (!_parallelLimit.Wait(0))
             {
-                if (level.TryGetChunk(pos, out var chunk) && chunk.IsGenerated)
+                return false;
+            }
+
+            ChunkMeshSnapshot snapshot = null;
+            try
+            {
+                lock (worldLock)
                 {
-                    snapshot = new ChunkMeshSnapshot(level, chunk);
+                    if (level.TryGetChunk(pos, out var chunk) && chunk.IsGenerated)
+                    {
+                        snapshot = new ChunkMeshSnapshot(level, chunk);
+                    }
                 }
+            }
+            catch
+            {
+                _parallelLimit.Release();
+                throw;
             }
 
             if (snapshot == null)
             {
-                _completed.Enqueue(new ChunkMeshResult(pos, null, withCollision, 0, true, true, null));
-                return true; // Skipping gracefully if chunk doesn't exist
-            }
-
-            if (!_parallelLimit.Wait(0))
-            {
-                return false;
+                // Chunk unavailable — release slot and report skip.
+                _parallelLimit.Release();
+                _completed.Enqueue(new ChunkMeshResult(pos, null, withCollision, 0, pipelineGeneration, true, true));
+                return true;
             }
 
             int snapshotRevision = snapshot.Revision;
@@ -103,7 +120,7 @@ namespace MineCraftUnity.Rendering
                 }
                 finally
                 {
-                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision, snapshotRevision, success, wasSkipped, errorMessage));
+                    _completed.Enqueue(new ChunkMeshResult(pos, data, withCollision, snapshotRevision, pipelineGeneration, success, wasSkipped, errorMessage));
                     _parallelLimit.Release();
                 }
             });

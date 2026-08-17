@@ -30,6 +30,8 @@ namespace MineCraftUnity.World
         private readonly byte[] _xMinusFluid;
 
         public bool IsEmpty { get; }
+        public int MinFilledY { get; }
+        public int MaxFilledY { get; }
 
         public ChunkMeshSnapshot(Level level, Chunk chunk)
         {
@@ -38,10 +40,14 @@ namespace MineCraftUnity.World
             if (!chunk.HasBlocks)
             {
                 IsEmpty = true;
+                MinFilledY = WorldConstants.MaxY;
+                MaxFilledY = WorldConstants.MinY;
                 return;
             }
 
             IsEmpty = false;
+            MinFilledY = chunk.MinFilledY;
+            MaxFilledY = chunk.MaxFilledY;
             var volume = WorldConstants.ChunkSize * WorldConstants.Height * WorldConstants.ChunkSize;
             
             _centerBlocks = new BlockId[volume];

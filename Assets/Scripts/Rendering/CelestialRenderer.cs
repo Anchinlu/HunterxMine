@@ -15,8 +15,8 @@ namespace MineCraftUnity.Rendering
     [DisallowMultipleComponent]
     public sealed class CelestialRenderer : MonoBehaviour
     {
-        private const float McSunScale = 28f;
-        private const float McMoonScale = 20f;
+        private const float McSunScale = 140f;
+        private const float McMoonScale = 100f;
         private const float McSunOrbitRadius = 165f;
         private const float McMoonOrbitRadius = 100f;
         private const float McSunOpacity = 0.72f;
@@ -25,6 +25,9 @@ namespace MineCraftUnity.Rendering
         private const float MoonHorizonHeight = 0.02f;
 
         [SerializeField] private Camera targetCamera;
+        [SerializeField] private Transform worldOrigin;
+        [SerializeField] private float sunOrbitRadius = 1000f;
+        [SerializeField] private float moonOrbitRadius = 900f;
 
         private Transform _domeRoot;
         private Transform _sunrisePivot;
@@ -112,26 +115,35 @@ namespace MineCraftUnity.Rendering
                 Initialize();
             }
 
-            if (targetCamera == null || !_domeRoot)
+            if (!_domeRoot)
             {
                 return;
             }
 
             var snapshot = ResolveSnapshot();
-            var cameraTransform = targetCamera.transform;
+            var originPos = worldOrigin != null ? worldOrigin.position : Vector3.zero;
 
             _domeRoot.gameObject.SetActive(true);
-            // MC ref: sky dome follows camera position and yaw only — not pitch/roll.
-            var cameraYaw = cameraTransform.eulerAngles.y;
-            _domeRoot.SetPositionAndRotation(cameraTransform.position, Quaternion.Euler(0f, cameraYaw, 0f));
+            _domeRoot.SetPositionAndRotation(originPos, Quaternion.identity);
 
             ApplySunriseFan(snapshot);
-            ApplyMcOrbit(_sunPivot, _sun, _sunQuadMesh, snapshot.SunAngleRadians, snapshot.SunDiscColor,
-                McSunScale, snapshot.RainBrightness, McSunOrbitRadius, McSunOpacity, isMoon: false);
-            ApplyMcOrbit(_moonPivot, _moon, _moonQuadMesh, snapshot.MoonAngleRadians, snapshot.MoonDiscColor,
-                McMoonScale, snapshot.RainBrightness, McMoonOrbitRadius, 1f, isMoon: true);
+
+            ApplyWorldEntity(
+                _sunPivot, _sun, _sunQuadMesh,
+                snapshot.SunDirection, snapshot.SunAngleRadians,
+                snapshot.SunDiscColor, McSunScale, snapshot.RainBrightness,
+                sunOrbitRadius, McSunOpacity, isMoon: false);
+
+            ApplyWorldEntity(
+                _moonPivot, _moon, _moonQuadMesh,
+                snapshot.MoonDirection, snapshot.MoonAngleRadians,
+                snapshot.MoonDiscColor, McMoonScale, snapshot.RainBrightness,
+                moonOrbitRadius, 1f, isMoon: true);
+
             UpdateMoonMaterial(snapshot.MoonPhase);
-            ApplyDarkDisc(snapshot, cameraTransform.position.y);
+            
+            float cameraY = targetCamera != null ? targetCamera.transform.position.y : originPos.y;
+            ApplyDarkDisc(snapshot, cameraY);
         }
 
         private static OverworldSkyVisuals.Snapshot ResolveSnapshot()
@@ -344,10 +356,11 @@ namespace MineCraftUnity.Rendering
             return isMoon ? height > MoonHorizonHeight : height > SunHorizonHeight;
         }
 
-        private void ApplyMcOrbit(
+        private void ApplyWorldEntity(
             Transform pivot,
             Transform body,
             Mesh mesh,
+            Vector3 worldDirection,
             float angleRadians,
             Color tint,
             float scale,
@@ -360,9 +373,6 @@ namespace MineCraftUnity.Rendering
             {
                 return;
             }
-
-            pivot.localRotation = Quaternion.AngleAxis(-90f, Vector3.up)
-                * Quaternion.AngleAxis(angleRadians * Mathf.Rad2Deg, Vector3.right);
 
             var visible = IsDiscAboveHorizon(angleRadians, isMoon);
             body.gameObject.SetActive(visible);
@@ -377,8 +387,22 @@ namespace MineCraftUnity.Rendering
                 meshFilter.sharedMesh = mesh;
             }
 
-            body.localPosition = new Vector3(0f, orbitRadius, 0f);
-            body.localRotation = Quaternion.identity;
+            // Position at world coordinate
+            Vector3 originPos = worldOrigin != null ? worldOrigin.position : Vector3.zero;
+            Vector3 entityPos = originPos + worldDirection * orbitRadius;
+            
+            pivot.position = originPos; // Kept at origin
+            pivot.rotation = Quaternion.identity;
+
+            body.position = entityPos;
+            
+            // Face the origin (quad renders correctly facing inward)
+            body.rotation = Quaternion.LookRotation(originPos - entityPos, Vector3.up) * Quaternion.AngleAxis(90f, Vector3.right);
+            
+            // Fix orientation mapping for Minecraft sun/moon textures
+            // In vanilla, the sun/moon rotates visually.
+            // Here we just use billboard/look-at to keep it simple.
+            
             body.localScale = new Vector3(scale, 1f, scale);
 
             Color displayTint;

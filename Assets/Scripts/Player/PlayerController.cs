@@ -49,9 +49,41 @@ namespace MineCraftUnity.Player
         public bool IsInWater { get; private set; }
         public bool IsHeadUnderwater { get; private set; }
 
+        public bool IsGrounded => _controller != null && _controller.isGrounded;
+        public Vector3 CurrentVelocity { get; private set; }
+        public float HorizontalSpeed => new Vector3(CurrentVelocity.x, 0f, CurrentVelocity.z).magnitude;
+        public bool IsSprinting { get; private set; }
+
+        public float WalkSpeed => walkSpeed;
+        public float SprintSpeed => sprintSpeed;
+
+        public Vector2 MoveInput { get; private set; }
+        public bool IsMoving => MoveInput.sqrMagnitude > 0.001f;
+        public bool IsMovingBackward => MoveInput.y < -0.1f;
+        public bool IsStrafing => Mathf.Abs(MoveInput.x) > 0.1f;
+
+        public float CameraPitch => _cameraPitch;
+        public float YawVelocity { get; private set; }
+
+        public Vector3 LocalMoveDirection
+        {
+            get
+            {
+                Vector3 worldDirection = CurrentVelocity;
+                worldDirection.y = 0f;
+                return transform.InverseTransformDirection(worldDirection);
+            }
+        }
+
         private void Awake()
         {
             _controller = GetComponent<CharacterController>();
+            
+            if (GetComponent<MineCraftUnity.Player.Combat.CombatController>() == null)
+            {
+                gameObject.AddComponent<MineCraftUnity.Player.Combat.CombatController>();
+            }
+
             ResolveCameraRoot();
             EnsureUnderwaterEffect();
             if (chunkManager == null)
@@ -80,18 +112,28 @@ namespace MineCraftUnity.Player
             }
         }
 
+        private float _previousYaw;
+
         private void Start()
         {
             if (lockCursorOnStart)
             {
                 LockCursor();
             }
+            _previousYaw = transform.eulerAngles.y;
         }
 
         private void Update()
         {
+            float currentYaw = transform.eulerAngles.y;
+            YawVelocity = Mathf.DeltaAngle(_previousYaw, currentYaw) / Mathf.Max(Time.deltaTime, 0.001f);
+            _previousYaw = currentYaw;
+
             if (_controller != null && !_controller.enabled)
             {
+                MoveInput = Vector2.zero;
+                CurrentVelocity = Vector3.zero;
+                IsSprinting = false;
                 return;
             }
 
@@ -104,10 +146,17 @@ namespace MineCraftUnity.Player
                 UnlockCursor();
             }
 
+            bool isInteractingWithPanel = false;
+            if (TryGetComponent<PlayerViewController>(out var vc))
+            {
+                isInteractingWithPanel = vc.IsStatusPanelInteracting;
+            }
+
             if (Mouse.current != null
                 && Mouse.current.leftButton.wasPressedThisFrame
                 && Cursor.lockState != CursorLockMode.Locked
-                && !MineCraftUnity.UI.ChatCommandOverlay.IsOpen)
+                && !MineCraftUnity.UI.ChatCommandOverlay.IsOpen
+                && !isInteractingWithPanel)
             {
                 LockCursor();
             }
@@ -117,6 +166,12 @@ namespace MineCraftUnity.Player
                 if (!_isFlying)
                 {
                     ApplyGravityOnly();
+                }
+                else
+                {
+                    MoveInput = Vector2.zero;
+                    CurrentVelocity = Vector3.zero;
+                    IsSprinting = false;
                 }
 
                 return;
@@ -213,12 +268,23 @@ namespace MineCraftUnity.Player
             var keyboard = Keyboard.current;
             if (keyboard == null)
             {
+                ResetMovementState();
                 return;
             }
 
             var input = ReadHorizontalInput(keyboard);
+            MoveInput = input;
 
-            var speed = keyboard.leftShiftKey.isPressed ? sprintSpeed : walkSpeed;
+            if (input.sqrMagnitude < 0.001f)
+            {
+                ResetMovementState();
+            }
+            else
+            {
+                IsSprinting = keyboard.leftShiftKey.isPressed;
+            }
+
+            var speed = IsSprinting ? sprintSpeed : walkSpeed;
             GetHorizontalBasis(out var forward, out var right);
 
             var move = (forward * input.y + right * input.x) * speed;
@@ -239,7 +305,16 @@ namespace MineCraftUnity.Player
             _verticalVelocity += gravity * Time.deltaTime;
             move.y = _verticalVelocity;
 
+            CurrentVelocity = move;
+
             _controller.Move(move * Time.deltaTime);
+        }
+
+        private void ResetMovementState()
+        {
+            MoveInput = Vector2.zero;
+            IsSprinting = false;
+            CurrentVelocity = new Vector3(0f, _verticalVelocity, 0f);
         }
 
         private void HandleSwimMove()
@@ -247,10 +322,13 @@ namespace MineCraftUnity.Player
             var keyboard = Keyboard.current;
             if (keyboard == null)
             {
+                ResetMovementState();
                 return;
             }
 
             var input = ReadHorizontalInput(keyboard);
+            MoveInput = input;
+            
             var speed = keyboard.leftShiftKey.isPressed ? swimSprintSpeed : swimSpeed;
             GetHorizontalBasis(out var forward, out var right);
 
@@ -274,6 +352,9 @@ namespace MineCraftUnity.Player
             _verticalVelocity += waterGravity * Time.deltaTime;
             move.y += _verticalVelocity;
 
+            CurrentVelocity = move;
+            IsSprinting = keyboard.leftShiftKey.isPressed && input.sqrMagnitude > 0f;
+
             _controller.Move(move * Time.deltaTime);
 
             if (_controller.isGrounded && _verticalVelocity < 0f)
@@ -287,10 +368,13 @@ namespace MineCraftUnity.Player
             var keyboard = Keyboard.current;
             if (keyboard == null)
             {
+                ResetMovementState();
                 return;
             }
 
             var input = ReadHorizontalInput(keyboard);
+            MoveInput = input;
+            
             var speed = keyboard.leftShiftKey.isPressed
                 ? flySpeed * flySprintMultiplier
                 : flySpeed;
@@ -313,7 +397,11 @@ namespace MineCraftUnity.Player
                 move.Normalize();
             }
 
-            _controller.Move(move * speed * Time.deltaTime);
+            Vector3 finalMove = move * speed;
+            CurrentVelocity = finalMove;
+            IsSprinting = keyboard.leftShiftKey.isPressed && input.sqrMagnitude > 0f;
+
+            _controller.Move(finalMove * Time.deltaTime);
         }
 
         private static Vector2 ReadHorizontalInput(Keyboard keyboard)
@@ -365,6 +453,7 @@ namespace MineCraftUnity.Player
             }
 
             _verticalVelocity += gravity * Time.deltaTime;
+            ResetMovementState();
             _controller.Move(new Vector3(0f, _verticalVelocity, 0f) * Time.deltaTime);
         }
 

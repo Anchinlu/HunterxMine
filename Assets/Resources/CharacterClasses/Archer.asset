@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7f60340b0733790429fdda92e12badbe, type: 3}
+  m_Name: Archer
+  m_EditorClassIdentifier: Assembly-CSharp::MineCraftUnity.Player.CharacterClassDefinition
+  characterClass: 1
+  levelOneStats:
+    hp: 25
+    strength: 22
+    defense: 18
+    agility: 40
+    dexterity: 43
+    intelligence: 20
+    mana: 22
+    stamina: 30
+  growth:
+    hpPerLevel: 3
+    strengthPerLevel: 3
+    defensePerLevel: 2
+    agilityPerLevel: 5
+    dexterityPerLevel: 5
+    intelligencePerLevel: 3
+    manaPerLevel: 3
+    staminaPerLevel: 4

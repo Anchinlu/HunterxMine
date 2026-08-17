@@ -6,7 +6,7 @@ namespace MineCraftUnity.Rendering
 {
     public static class CelestialMaterialLibrary
     {
-        private const string TextureRoot = "Assets/Minecraft/Environment/Celestial";
+        private const string ResourceRoot = "Environment/Celestial";
 
         private static Material _sunMaterial;
         private static Material _sunriseMaterial;
@@ -25,7 +25,7 @@ namespace MineCraftUnity.Rendering
             }
 
             var fileName = phase.TextureFileName();
-            var material = CreateMaterial($"{TextureRoot}/moon/{fileName}.png", $"Mat_Moon_{fileName}");
+            var material = CreateMaterial($"moon/{fileName}", $"Mat_Moon_{fileName}");
             MoonMaterials[phase] = material;
             return material;
         }
@@ -37,7 +37,7 @@ namespace MineCraftUnity.Rendering
                 return _sunMaterial;
             }
 
-            _sunMaterial = CreateMaterial($"{TextureRoot}/sun.png", "Mat_SunBillboard");
+            _sunMaterial = CreateMaterial("sun", "Mat_SunBillboard");
             return _sunMaterial;
         }
 
@@ -69,13 +69,13 @@ namespace MineCraftUnity.Rendering
             return _darkDiscMaterial;
         }
 
-        private static Material CreateMaterial(string assetPath, string matName)
+        private static Material CreateMaterial(string relativePath, string matName)
         {
             var shader = Shader.Find("MineCraft/CelestialBillboard")
                 ?? Shader.Find("Universal Render Pipeline/Unlit");
             var material = new Material(shader) { name = matName };
 
-            var texture = LoadTexture(assetPath);
+            var texture = LoadTexture(relativePath);
             if (texture != null && material.HasProperty("_BaseMap"))
             {
                 material.SetTexture("_BaseMap", texture);
@@ -83,22 +83,22 @@ namespace MineCraftUnity.Rendering
             }
             else
             {
-                Debug.LogWarning($"[MineCraft] Celestial texture missing: {assetPath}");
+                Debug.LogWarning($"[CelestialMaterialLibrary] Texture missing: Resources/{ResourceRoot}/{relativePath}");
             }
 
             return material;
         }
 
-        private static Texture2D LoadTexture(string assetPath)
+        private static Texture2D LoadTexture(string relativePath)
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
-#else
-            var resourcePath = assetPath
-                .Replace("Assets/Minecraft/Environment/Celestial/", "Environment/Celestial/")
-                .Replace(".png", "");
-            return Resources.Load<Texture2D>(resourcePath);
-#endif
+            var resourcePath = $"{ResourceRoot}/{relativePath}";
+            var tex = Resources.Load<Texture2D>(resourcePath);
+            if (tex == null)
+            {
+                Debug.LogWarning($"[CelestialMaterialLibrary] Texture not found at Resources/{resourcePath}");
+            }
+
+            return tex;
         }
     }
 }

@@ -3,9 +3,66 @@ using UnityEngine;
 
 namespace MineCraftUnity.Player
 {
+    public enum StatType
+    {
+        Health,
+        Mana,
+        Stamina,
+        Strength,
+        Defense,
+        Agility,
+        Dexterity,
+        Intelligence
+    }
+
     public class PlayerStats : MonoBehaviour
     {
         public event Action StatsChanged;
+
+        [SerializeField] private CharacterClass currentClass = CharacterClass.Warrior;
+        [SerializeField] private int level = 1;
+
+        [SerializeField] private int unspentStatPoints = 3;
+
+        [Header("Allocated Bonuses")]
+        [SerializeField] private int bonusHealth;
+        [SerializeField] private int bonusMana;
+        [SerializeField] private int bonusStamina;
+        [SerializeField] private int bonusStrength;
+        [SerializeField] private int bonusDefense;
+        [SerializeField] private int bonusAgility;
+        [SerializeField] private int bonusDexterity;
+        [SerializeField] private int bonusIntelligence;
+
+        public CharacterClass CurrentClass => currentClass;
+        public int UnspentStatPoints
+        {
+            get => unspentStatPoints;
+            private set
+            {
+                unspentStatPoints = Mathf.Max(0, value);
+                NotifyChanged();
+            }
+        }
+        public int Level
+        {
+            get => level;
+            set
+            {
+                var newLevel = Mathf.Max(1, value);
+                if (newLevel != level)
+                {
+                    level = newLevel;
+                    NotifyChanged();
+                }
+            }
+        }
+
+        public int Strength { get; private set; }
+        public int Defense { get; private set; }
+        public int Agility { get; private set; }
+        public int Dexterity { get; private set; }
+        public int Intelligence { get; private set; }
 
         [SerializeField] private float _health = 100f;
         [SerializeField] private float _maxHealth = 100f;
@@ -98,6 +155,70 @@ namespace MineCraftUnity.Player
         private void NotifyChanged()
         {
             StatsChanged?.Invoke();
+        }
+
+        public void AddStatPoints(int points)
+        {
+            if (points <= 0) return;
+            // Use field directly so we only call NotifyChanged once if we want, or use property.
+            // Property calls NotifyChanged.
+            UnspentStatPoints += points;
+        }
+
+        public bool SpendStatPoint(StatType stat)
+        {
+            if (unspentStatPoints <= 0) return false;
+
+            switch (stat)
+            {
+                case StatType.Health: bonusHealth++; _maxHealth++; break;
+                case StatType.Mana: bonusMana++; _maxMana++; break;
+                case StatType.Stamina: bonusStamina++; _maxStamina++; break;
+                case StatType.Strength: bonusStrength++; Strength++; break;
+                case StatType.Defense: bonusDefense++; Defense++; break;
+                case StatType.Agility: bonusAgility++; Agility++; break;
+                case StatType.Dexterity: bonusDexterity++; Dexterity++; break;
+                case StatType.Intelligence: bonusIntelligence++; Intelligence++; break;
+            }
+
+            unspentStatPoints--;
+            NotifyChanged();
+            return true;
+        }
+
+        public void ApplyClass(CharacterClassDefinition definition, bool refillResources = true)
+        {
+            if (definition == null) return;
+
+            currentClass = definition.characterClass;
+            
+            int lvlOffset = level - 1;
+            var baseStats = definition.levelOneStats;
+            var growth = definition.growth;
+
+            _maxHealth = baseStats.hp + growth.hpPerLevel * lvlOffset + bonusHealth;
+            Strength = baseStats.strength + growth.strengthPerLevel * lvlOffset + bonusStrength;
+            Defense = baseStats.defense + growth.defensePerLevel * lvlOffset + bonusDefense;
+            Agility = baseStats.agility + growth.agilityPerLevel * lvlOffset + bonusAgility;
+            Dexterity = baseStats.dexterity + growth.dexterityPerLevel * lvlOffset + bonusDexterity;
+            Intelligence = baseStats.intelligence + growth.intelligencePerLevel * lvlOffset + bonusIntelligence;
+            _maxMana = baseStats.mana + growth.manaPerLevel * lvlOffset + bonusMana;
+            _maxStamina = baseStats.stamina + growth.staminaPerLevel * lvlOffset + bonusStamina;
+
+            if (refillResources)
+            {
+                _health = _maxHealth;
+                _mana = _maxMana;
+                _stamina = _maxStamina;
+            }
+            else
+            {
+                _health = Mathf.Clamp(_health, 0, _maxHealth);
+                _mana = Mathf.Clamp(_mana, 0, _maxMana);
+                _stamina = Mathf.Clamp(_stamina, 0, _maxStamina);
+            }
+
+            NotifyChanged();
         }
     }
 }

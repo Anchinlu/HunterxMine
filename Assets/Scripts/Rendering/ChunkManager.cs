@@ -61,6 +61,12 @@ namespace MineCraftUnity.Rendering
         private readonly Dictionary<ChunkPos, bool> _collisionApplied = new();
         private FluidSimulator _fluidSimulator;
 
+        /// <summary>Pipeline generation counter — incremented on every world reset to detect stale worker results.</summary>
+        private int _pipelineGeneration;
+
+        /// <summary>Chunks that need remesh but currently have a mesh task in-flight.</summary>
+        private readonly HashSet<ChunkPos> _meshPendingRemesh = new();
+
         private struct RetryInfo
         {
             public int Count;
@@ -540,6 +546,12 @@ namespace MineCraftUnity.Rendering
                 var pos = result.Position;
                 _generationInFlight.Remove(pos);
 
+                // Discard stale results from a previous world/pipeline.
+                if (result.PipelineGeneration != _pipelineGeneration)
+                {
+                    continue;
+                }
+
                 if (!result.Success)
                 {
                     UnityEngine.Debug.LogError($"[ChunkManager] Generation failed at {pos}: {result.ErrorMessage}");
@@ -595,26 +607,67 @@ namespace MineCraftUnity.Rendering
                 var pos = result.Position;
                 _meshInFlight.Remove(pos);
 
+                // Discard stale results from a previous world/pipeline.
+                if (result.PipelineGeneration != _pipelineGeneration)
+                {
+                    // Still check pending remesh for this pos in current pipeline.
+                    if (_meshPendingRemesh.Remove(pos))
+                    {
+                        ScheduleMesh(pos);
+                    }
+                    continue;
+                }
+
                 if (!result.Success)
                 {
                     UnityEngine.Debug.LogError($"[ChunkManager] Mesh failed at {pos}: {result.ErrorMessage}");
                     HandleRetry(pos);
                     UnscheduleMesh(pos);
+                    if (_meshPendingRemesh.Remove(pos))
+                    {
+                        ScheduleMesh(pos);
+                    }
                     continue;
                 }
 
                 if (result.WasSkipped || !_neededChunks.Contains(pos))
                 {
                     UnscheduleMesh(pos);
+                    _meshPendingRemesh.Remove(pos);
                     continue;
                 }
                 
                 _failedRetries.Remove(pos);
 
-                ApplyMeshResult(result);
+                // Check revision: if chunk was modified while mesh was building, discard and reschedule.
+                bool stale = false;
+                if (_level.TryGetChunk(pos, out var chunk) && chunk.Revision != result.Revision)
+                {
+                    stale = true;
+                }
+
+                if (!stale)
+                {
+                    ApplyMeshResult(result);
+                }
+
                 UnscheduleMesh(pos);
-                RequestCollisionState(pos, result.WithCollision);
-                applied++;
+
+                // Re-request collision state after mesh data has been applied.
+                if (!stale)
+                {
+                    RequestCollisionState(pos, result.WithCollision);
+                }
+
+                // If there was a pending remesh or the result was stale, reschedule.
+                if (stale || _meshPendingRemesh.Remove(pos))
+                {
+                    ScheduleMesh(pos);
+                }
+                else
+                {
+                    applied++;
+                }
             }
 
             if (_generationList.Count == 0 && _generationInFlight.Count == 0 &&
@@ -649,7 +702,7 @@ namespace MineCraftUnity.Rendering
                     continue;
                 }
 
-                if (_generationWorker.TryStart(pos, _level, _generator, _worldLock, IsChunkStillNeeded))
+                if (_generationWorker.TryStart(pos, _level, _generator, _worldLock, IsChunkStillNeeded, _pipelineGeneration))
                 {
                     _generationInFlight.Add(pos);
                     _generationList.RemoveAt(i);
@@ -695,7 +748,7 @@ namespace MineCraftUnity.Rendering
                 }
 
                 var withCollision = IsWithinDistance(pos, collisionCenter, collisionDistance);
-                if (_meshWorker.TryStart(pos, _level, withCollision, _worldLock, IsChunkStillNeeded))
+                if (_meshWorker.TryStart(pos, _level, withCollision, _worldLock, IsChunkStillNeeded, _pipelineGeneration))
                 {
                     _meshInFlight.Add(pos);
                     _meshList.RemoveAt(i);
@@ -925,6 +978,14 @@ namespace MineCraftUnity.Rendering
 
         private void ScheduleMesh(ChunkPos pos)
         {
+            // If a mesh task is already in-flight for this chunk, mark it for remesh
+            // after the current task completes instead of double-scheduling.
+            if (_meshInFlight.Contains(pos))
+            {
+                _meshPendingRemesh.Add(pos);
+                return;
+            }
+
             if (_meshScheduled.Add(pos))
             {
                 _meshList.Add(pos);
@@ -1056,6 +1117,18 @@ namespace MineCraftUnity.Rendering
                     continue;
                 }
 
+                // Only mark collision as applied when:
+                // - disabling collision (always safe), or
+                // - enabling collision AND the renderer actually has a collision mesh.
+                // If enable is requested but no collision mesh exists yet,
+                // do NOT mark applied — it will be retried when the mesh result arrives.
+                if (enable && !renderer.HasCollisionMesh)
+                {
+                    // Collision mesh not ready yet — skip, don't mark applied.
+                    // The mesh worker will re-request collision when the mesh arrives.
+                    continue;
+                }
+
                 renderer.SetCollisionEnabled(enable);
                 _collisionApplied[pos] = enable;
                 processed++;
@@ -1088,9 +1161,13 @@ namespace MineCraftUnity.Rendering
 
         private void ResetAsyncPipelineState()
         {
+            // Increment pipeline generation so in-flight tasks from old world are ignored.
+            _pipelineGeneration++;
+
             ClearPendingQueues();
             _generationInFlight.Clear();
             _meshInFlight.Clear();
+            _meshPendingRemesh.Clear();
 
             if (_generationWorker != null)
             {
@@ -1199,8 +1276,12 @@ namespace MineCraftUnity.Rendering
 
         private void ClearWorld()
         {
+            // Increment pipeline generation so in-flight tasks from old world are ignored.
+            _pipelineGeneration++;
+
             _generationInFlight.Clear();
             _meshInFlight.Clear();
+            _meshPendingRemesh.Clear();
             if (_generationWorker != null)
             {
                 while (_generationWorker.TryDequeueCompleted(out _))

@@ -127,16 +127,26 @@ namespace MineCraftUnity.UI
         private void DrawChatTextField(Rect fieldRect)
         {
             GUI.SetNextControlName("MineCraftChatInput");
+            
+            var previousInput = _input;
+            _input = GUI.TextField(fieldRect, _input, 256, _inputStyle);
+
             if (_focusInput)
             {
                 GUI.FocusControl("MineCraftChatInput");
+                
+                var textEditor = (TextEditor)GUIUtility.GetStateObject(typeof(TextEditor), GUIUtility.keyboardControl);
+                if (textEditor != null)
+                {
+                    textEditor.MoveTextEnd();
+                    textEditor.selectIndex = textEditor.cursorIndex;
+                }
+                
                 _focusInput = false;
             }
 
             ConsumeTextFieldNavigationEvents();
 
-            var previousInput = _input;
-            _input = GUI.TextField(fieldRect, _input, 256, _inputStyle);
             if (!string.Equals(previousInput, _input))
             {
                 _selectedSuggestionIndex = 0;

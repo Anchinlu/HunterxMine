@@ -109,10 +109,14 @@ namespace MineCraftUnity.Rendering
             return EvaluateSunAngleRadians(dayFraction) + Mathf.PI;
         }
 
-        /// <summary>World-space sun direction after Ry(-90°) * Rx(angle), without camera pitch.</summary>
+        /// <summary>World-space celestial direction. Tilted 30 degrees South to satisfy East-South-West orbit.</summary>
         public static Vector3 DirectionFromCelestialAngle(float angleRadians)
         {
-            return new Vector3(-Mathf.Sin(angleRadians), Mathf.Cos(angleRadians), 0f).normalized;
+            float tilt = 30f * Mathf.Deg2Rad;
+            float x = -Mathf.Sin(angleRadians);
+            float y = Mathf.Cos(angleRadians) * Mathf.Cos(tilt);
+            float z = Mathf.Cos(angleRadians) * Mathf.Sin(tilt);
+            return new Vector3(x, y, z).normalized;
         }
 
         public static Snapshot Evaluate(

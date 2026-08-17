@@ -16,14 +16,17 @@ namespace MineCraftUnity.World
         public bool Success { get; }
         public bool WasSkipped { get; }
         public string ErrorMessage { get; }
+        public int PipelineGeneration { get; }
 
-        public ChunkGenerationResult(ChunkPos position, ChunkGenerationData data, bool success, bool wasSkipped, string errorMessage)
+        public ChunkGenerationResult(ChunkPos position, ChunkGenerationData data,
+            bool success, bool wasSkipped, string errorMessage, int pipelineGeneration)
         {
             Position = position;
             Data = data;
             Success = success;
             WasSkipped = wasSkipped;
             ErrorMessage = errorMessage;
+            PipelineGeneration = pipelineGeneration;
         }
     }
 
@@ -49,7 +52,8 @@ namespace MineCraftUnity.World
             Level level,
             IChunkGenerator generator,
             object worldLock,
-            Func<ChunkPos, bool> isStillNeeded)
+            Func<ChunkPos, bool> isStillNeeded,
+            int pipelineGeneration)
         {
             if (!_parallelLimit.Wait(0))
             {
@@ -84,7 +88,7 @@ namespace MineCraftUnity.World
                 }
                 finally
                 {
-                    _completed.Enqueue(new ChunkGenerationResult(pos, data, success, wasSkipped, errorMessage));
+                    _completed.Enqueue(new ChunkGenerationResult(pos, data, success, wasSkipped, errorMessage, pipelineGeneration));
                     _parallelLimit.Release();
                 }
             });
@@ -103,4 +107,3 @@ namespace MineCraftUnity.World
         }
     }
 }
-
